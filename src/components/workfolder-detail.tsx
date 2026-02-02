@@ -1589,69 +1589,113 @@ export function WorkfolderDetail({ project }: Props) {
 
                 {field.type === "signature" && (
                   <div className="space-y-2">
-                    <canvas
-                      id={`sig-${field.id}`}
-                      className="w-full h-32 border border-neutral-700 rounded bg-white cursor-crosshair touch-none"
-                      onMouseDown={(e) => {
-                        const canvas = e.currentTarget;
-                        const ctx = canvas.getContext("2d");
-                        if (!ctx) return;
-                        const rect = canvas.getBoundingClientRect();
-                        ctx.beginPath();
-                        ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
-                        const onMove = (ev: MouseEvent) => {
-                          ctx.lineTo(ev.clientX - rect.left, ev.clientY - rect.top);
-                          ctx.stroke();
-                        };
-                        const onUp = () => {
-                          setFormData({ ...formData, [field.id]: canvas.toDataURL() });
-                          window.removeEventListener("mousemove", onMove);
-                          window.removeEventListener("mouseup", onUp);
-                        };
-                        window.addEventListener("mousemove", onMove);
-                        window.addEventListener("mouseup", onUp);
-                      }}
-                      onTouchStart={(e) => {
-                        const canvas = e.currentTarget;
-                        const ctx = canvas.getContext("2d");
-                        if (!ctx) return;
-                        const rect = canvas.getBoundingClientRect();
-                        const touch = e.touches[0];
-                        ctx.beginPath();
-                        ctx.moveTo(touch.clientX - rect.left, touch.clientY - rect.top);
-                        const onMove = (ev: TouchEvent) => {
-                          ev.preventDefault();
-                          const t = ev.touches[0];
-                          ctx.lineTo(t.clientX - rect.left, t.clientY - rect.top);
-                          ctx.stroke();
-                        };
-                        const onEnd = () => {
-                          setFormData({ ...formData, [field.id]: canvas.toDataURL() });
-                          canvas.removeEventListener("touchmove", onMove);
-                          canvas.removeEventListener("touchend", onEnd);
-                        };
-                        canvas.addEventListener("touchmove", onMove, { passive: false });
-                        canvas.addEventListener("touchend", onEnd);
-                      }}
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        className="text-xs text-neutral-400 hover:text-white"
-                        onClick={() => {
-                          const canvas = document.getElementById(`sig-${field.id}`) as HTMLCanvasElement;
-                          const ctx = canvas?.getContext("2d");
-                          if (ctx) {
-                            ctx.clearRect(0, 0, canvas.width, canvas.height);
-                            setFormData({ ...formData, [field.id]: "" });
+                    <div className="relative">
+                      <canvas
+                        id={`sig-${field.id}`}
+                        className="w-full border-2 border-neutral-600 rounded-lg bg-white cursor-crosshair touch-none"
+                        style={{ height: "150px" }}
+                        ref={(canvas) => {
+                          if (canvas && !canvas.dataset.initialized) {
+                            const rect = canvas.getBoundingClientRect();
+                            const dpr = window.devicePixelRatio || 1;
+                            canvas.width = rect.width * dpr;
+                            canvas.height = rect.height * dpr;
+                            const ctx = canvas.getContext("2d");
+                            if (ctx) {
+                              ctx.scale(dpr, dpr);
+                              ctx.lineCap = "round";
+                              ctx.lineJoin = "round";
+                              ctx.lineWidth = 2.5;
+                              ctx.strokeStyle = "#000";
+                            }
+                            canvas.dataset.initialized = "true";
                           }
                         }}
-                      >
-                        Löschen
-                      </button>
+                        onMouseDown={(e) => {
+                          const canvas = e.currentTarget;
+                          const ctx = canvas.getContext("2d");
+                          if (!ctx) return;
+                          const rect = canvas.getBoundingClientRect();
+                          let lastX = e.clientX - rect.left;
+                          let lastY = e.clientY - rect.top;
+                          ctx.beginPath();
+                          ctx.moveTo(lastX, lastY);
+                          
+                          const onMove = (ev: MouseEvent) => {
+                            const x = ev.clientX - rect.left;
+                            const y = ev.clientY - rect.top;
+                            ctx.lineTo(x, y);
+                            ctx.stroke();
+                            ctx.beginPath();
+                            ctx.moveTo(x, y);
+                          };
+                          const onUp = () => {
+                            setFormData({ ...formData, [field.id]: canvas.toDataURL() });
+                            window.removeEventListener("mousemove", onMove);
+                            window.removeEventListener("mouseup", onUp);
+                          };
+                          window.addEventListener("mousemove", onMove);
+                          window.addEventListener("mouseup", onUp);
+                        }}
+                        onTouchStart={(e) => {
+                          e.preventDefault();
+                          const canvas = e.currentTarget;
+                          const ctx = canvas.getContext("2d");
+                          if (!ctx) return;
+                          const rect = canvas.getBoundingClientRect();
+                          const touch = e.touches[0];
+                          let lastX = touch.clientX - rect.left;
+                          let lastY = touch.clientY - rect.top;
+                          ctx.beginPath();
+                          ctx.moveTo(lastX, lastY);
+                          
+                          const onMove = (ev: TouchEvent) => {
+                            ev.preventDefault();
+                            const t = ev.touches[0];
+                            const x = t.clientX - rect.left;
+                            const y = t.clientY - rect.top;
+                            ctx.lineTo(x, y);
+                            ctx.stroke();
+                            ctx.beginPath();
+                            ctx.moveTo(x, y);
+                          };
+                          const onEnd = () => {
+                            setFormData({ ...formData, [field.id]: canvas.toDataURL() });
+                            canvas.removeEventListener("touchmove", onMove);
+                            canvas.removeEventListener("touchend", onEnd);
+                          };
+                          canvas.addEventListener("touchmove", onMove, { passive: false });
+                          canvas.addEventListener("touchend", onEnd);
+                        }}
+                      />
+                      {!formData[field.id] && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <span className="text-neutral-400 text-sm">Hier unterschreiben</span>
+                        </div>
+                      )}
                     </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost text-neutral-400"
+                      onClick={() => {
+                        const canvas = document.getElementById(`sig-${field.id}`) as HTMLCanvasElement;
+                        if (canvas) {
+                          const ctx = canvas.getContext("2d");
+                          const dpr = window.devicePixelRatio || 1;
+                          if (ctx) {
+                            ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+                          }
+                          setFormData({ ...formData, [field.id]: "" });
+                        }
+                      }}
+                    >
+                      Unterschrift löschen
+                    </button>
                     {formData[field.id] && (
-                      <div className="text-xs text-green-500">Unterschrift erfasst</div>
+                      <div className="text-xs text-green-500 flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        Unterschrift erfasst
+                      </div>
                     )}
                   </div>
                 )}
