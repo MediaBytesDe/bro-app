@@ -1,0 +1,1350 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { Spinner } from "@/components/ui/spinner";
+import { Modal } from "@/components/ui/modal";
+import {
+  ArrowLeft,
+  User,
+  Calendar,
+  Users,
+  FileText,
+  ImageIcon,
+  Plus,
+  Pencil,
+  Trash2,
+  Phone,
+  Mail,
+  MapPin,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Download,
+  Eye,
+  ExternalLink,
+  FileSignature,
+  Receipt,
+  Ruler,
+  ClipboardList,
+  Camera,
+  FileCheck,
+  Shield,
+  Folder,
+  type LucideIcon,
+} from "lucide-react";
+import { formatDate } from "@/lib/utils";
+import type { 
+  Project, 
+  Customer, 
+  Appointment, 
+  Subcontractor, 
+  Document,
+  AppointmentType,
+  AppointmentStatus,
+  WorkfolderStatusDef 
+} from "@/types/database";
+
+// Farben für Status
+const statusColors: Record<string, string> = {
+  gray: "bg-neutral-600 text-neutral-200",
+  blue: "bg-blue-600 text-blue-100",
+  cyan: "bg-cyan-600 text-cyan-100",
+  yellow: "bg-yellow-600 text-yellow-100",
+  orange: "bg-orange-600 text-orange-100",
+  purple: "bg-purple-600 text-purple-100",
+  green: "bg-green-600 text-green-100",
+  neutral: "bg-neutral-700 text-neutral-300",
+  red: "bg-red-600 text-red-100",
+};
+
+const appointmentTypeLabels: Record<AppointmentType, string> = {
+  aufmass: "Aufmaß",
+  vob_termin: "VOB-Termin",
+  montage_start: "Montage Start",
+  montage_end: "Montage Ende",
+  abnahme: "Abnahme",
+  nachbesserung: "Nachbesserung",
+  wartung: "Wartung",
+  beratung: "Beratung",
+  sonstiges: "Sonstiges",
+};
+
+const appointmentStatusColors: Record<AppointmentStatus, string> = {
+  scheduled: "badge-info",
+  confirmed: "badge-primary",
+  in_progress: "badge-warning",
+  completed: "badge-success",
+  cancelled: "badge-error",
+  rescheduled: "badge-gray",
+};
+
+const appointmentStatusLabels: Record<AppointmentStatus, string> = {
+  scheduled: "Geplant",
+  confirmed: "Bestätigt",
+  in_progress: "Läuft",
+  completed: "Abgeschlossen",
+  cancelled: "Abgesagt",
+  rescheduled: "Verschoben",
+};
+
+interface Props {
+  project: Project;
+}
+
+export function WorkfolderDetail({ project }: Props) {
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [parentProject, setParentProject] = useState<Project | null>(null);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [assignedSubs, setAssignedSubs] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [allSubcontractors, setAllSubcontractors] = useState<Subcontractor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"overview" | "appointments" | "subcontractors" | "documents" | "gallery">("overview");
+  const [currentStatus, setCurrentStatus] = useState<string | null>(project.workfolder_status);
+  const [statusOptions, setStatusOptions] = useState<WorkfolderStatusDef[]>([]);
+  
+  // Modals
+  const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+  const [showSubcontractorModal, setShowSubcontractorModal] = useState(false);
+  const [showDocumentModal, setShowDocumentModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  
+  // Lightbox / Document Preview
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
+  
+  // Customer change
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>(project.customer_id || "");
+  const [customerSearch, setCustomerSearch] = useState("");
+
+  // Forms
+  const [appointmentForm, setAppointmentForm] = useState({
+    title: "",
+    appointment_type: "aufmass" as AppointmentType,
+    start_time: "",
+    end_time: "",
+    description: "",
+    location_address: "",
+    subcontractor_ids: [] as string[],
+  });
+
+  const [selectedSubId, setSelectedSubId] = useState("");
+
+  const router = useRouter();
+  const supabase = createClient();
+
+  useEffect(() => {
+    loadData();
+  }, [project.id]);
+
+  async function loadData() {
+    setLoading(true);
+
+    // Load customer
+    if (project.customer_id) {
+      const { data: cust } = await supabase
+        .from("customers")
+        .select("*")
+        .eq("id", project.customer_id)
+        .single();
+      setCustomer(cust);
+    }
+
+    // Load parent project (Marke) and status options
+    if (project.parent_id) {
+      const { data: parent } = await supabase
+        .from("projects")
+        .select("*")
+        .eq("id", project.parent_id)
+        .single();
+      setParentProject(parent);
+      if (parent?.workfolder_statuses) {
+        setStatusOptions(parent.workfolder_statuses as WorkfolderStatusDef[]);
+      }
+    }
+
+    // Load appointments
+    const { data: appts } = await supabase
+      .from("appointments")
+      .select("*")
+      .eq("project_id", project.id)
+      .order("start_time", { ascending: true });
+    setAppointments(appts || []);
+
+    // Load assigned subcontractors
+    const { data: subs } = await supabase
+      .from("project_subcontractors")
+      .select("*, subcontractor:subcontractors(*)")
+      .eq("project_id", project.id);
+    setAssignedSubs(subs || []);
+
+    // Load documents
+    const { data: docs } = await supabase
+      .from("documents")
+      .select("*")
+      .eq("project_id", project.id)
+      .order("created_at", { ascending: false });
+    setDocuments(docs || []);
+
+    // Load all subcontractors for assignment
+    const { data: allSubs } = await supabase
+      .from("subcontractors")
+      .select("*")
+      .eq("status", "active")
+      .order("company_name");
+    setAllSubcontractors(allSubs || []);
+
+    setLoading(false);
+  }
+
+  async function updateStatus(newStatus: string) {
+    const { error } = await supabase
+      .from("projects")
+      .update({ workfolder_status: newStatus })
+      .eq("id", project.id);
+    
+    if (error) {
+      alert("Fehler: " + error.message);
+      return;
+    }
+    setCurrentStatus(newStatus);
+  }
+
+  async function openCustomerModal() {
+    // Load all customers
+    const { data } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("status", "active")
+      .order("last_name");
+    setAllCustomers(data || []);
+    setSelectedCustomerId(project.customer_id || "");
+    setCustomerSearch("");
+    setShowCustomerModal(true);
+  }
+
+  async function updateCustomer() {
+    setSaving(true);
+    const { error } = await supabase
+      .from("projects")
+      .update({ customer_id: selectedCustomerId || null })
+      .eq("id", project.id);
+    
+    if (error) {
+      alert("Fehler: " + error.message);
+      setSaving(false);
+      return;
+    }
+    
+    setShowCustomerModal(false);
+    setSaving(false);
+    loadData();
+  }
+
+  function getStatusDef(key: string | null): WorkfolderStatusDef | undefined {
+    return statusOptions.find(s => s.key === key);
+  }
+
+  function openNewAppointment() {
+    setEditingAppointment(null);
+    setAppointmentForm({
+      title: "",
+      appointment_type: "aufmass",
+      start_time: "",
+      end_time: "",
+      description: "",
+      location_address: "",
+      subcontractor_ids: [],
+    });
+    setShowAppointmentModal(true);
+  }
+
+  function openEditAppointment(apt: Appointment) {
+    setEditingAppointment(apt);
+    setAppointmentForm({
+      title: apt.title,
+      appointment_type: apt.appointment_type,
+      start_time: apt.start_time ? new Date(apt.start_time).toISOString().slice(0, 16) : "",
+      end_time: apt.end_time ? new Date(apt.end_time).toISOString().slice(0, 16) : "",
+      description: apt.description || "",
+      location_address: apt.location_address || "",
+      subcontractor_ids: apt.subcontractor_ids || [],
+    });
+    setShowAppointmentModal(true);
+  }
+
+  async function saveAppointment(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+
+    const payload = {
+      project_id: project.id,
+      customer_id: project.customer_id,
+      title: appointmentForm.title,
+      appointment_type: appointmentForm.appointment_type,
+      start_time: appointmentForm.start_time,
+      end_time: appointmentForm.end_time || null,
+      description: appointmentForm.description || null,
+      location_address: appointmentForm.location_address || null,
+      subcontractor_ids: appointmentForm.subcontractor_ids,
+    };
+
+    let error;
+    if (editingAppointment) {
+      ({ error } = await supabase.from("appointments").update(payload).eq("id", editingAppointment.id));
+    } else {
+      ({ error } = await supabase.from("appointments").insert({ ...payload, status: "scheduled" }));
+    }
+
+    setSaving(false);
+
+    if (error) {
+      alert("Fehler: " + error.message);
+      return;
+    }
+
+    setShowAppointmentModal(false);
+    setEditingAppointment(null);
+    loadData();
+  }
+
+  async function updateAppointmentStatus(aptId: string, newStatus: AppointmentStatus) {
+    const { error } = await supabase
+      .from("appointments")
+      .update({ status: newStatus })
+      .eq("id", aptId);
+    
+    if (error) {
+      alert("Fehler: " + error.message);
+      return;
+    }
+    loadData();
+  }
+
+  async function deleteAppointment(aptId: string) {
+    if (!confirm("Termin wirklich löschen?")) return;
+    
+    const { error } = await supabase.from("appointments").delete().eq("id", aptId);
+    if (error) {
+      alert("Fehler: " + error.message);
+      return;
+    }
+    loadData();
+  }
+
+  async function assignSubcontractor(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedSubId) return;
+    
+    setSaving(true);
+    
+    const sub = allSubcontractors.find(s => s.id === selectedSubId);
+    
+    const { error } = await supabase.from("project_subcontractors").insert({
+      project_id: project.id,
+      subcontractor_id: selectedSubId,
+      trade: sub?.trade || "sonstige",
+      status: "assigned",
+    });
+
+    setSaving(false);
+
+    if (error) {
+      alert("Fehler: " + error.message);
+      return;
+    }
+
+    setShowSubcontractorModal(false);
+    setSelectedSubId("");
+    loadData();
+  }
+
+  async function updateAppointmentStatus(id: string, status: AppointmentStatus) {
+    await supabase
+      .from("appointments")
+      .update({ status, completed_at: status === "completed" ? new Date().toISOString() : null })
+      .eq("id", id);
+    loadData();
+  }
+
+  async function removeSubcontractor(assignmentId: string) {
+    if (!confirm("Subunternehmer wirklich entfernen?")) return;
+    await supabase.from("project_subcontractors").delete().eq("id", assignmentId);
+    loadData();
+  }
+
+  async function uploadDocument(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const fileInput = form.querySelector('input[type="file"]') as HTMLInputElement;
+    const nameInput = form.querySelector('input[name="docName"]') as HTMLInputElement;
+    const typeSelect = form.querySelector('select[name="docType"]') as HTMLSelectElement;
+    
+    if (!fileInput?.files?.length) {
+      alert("Bitte eine Datei auswählen");
+      return;
+    }
+
+    const file = fileInput.files[0];
+    const docName = nameInput?.value || file.name;
+    const docType = typeSelect?.value || "sonstiges";
+
+    setUploading(true);
+
+    // Upload via API route
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("projectId", project.id);
+    formData.append("customerId", project.customer_id || "");
+    formData.append("name", docName);
+    formData.append("type", docType);
+
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Upload fehlgeschlagen");
+      }
+
+      setShowDocumentModal(false);
+      loadData();
+    } catch (error) {
+      alert("Upload-Fehler: " + (error instanceof Error ? error.message : "Unbekannter Fehler"));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function deleteDocument(docId: string, storagePath: string | null) {
+    if (!confirm("Dokument wirklich löschen?")) return;
+    
+    // Delete from storage
+    if (storagePath) {
+      await supabase.storage.from("documents").remove([storagePath]);
+    }
+    
+    // Delete from DB
+    await supabase.from("documents").delete().eq("id", docId);
+    loadData();
+  }
+
+  function getCustomerAddress() {
+    if (!customer) return null;
+    const parts = [customer.street, customer.postal_code, customer.city].filter(Boolean);
+    return parts.length > 0 ? parts.join(", ") : null;
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Spinner />
+      </div>
+    );
+  }
+
+  const tabs = [
+    { id: "overview", label: "Übersicht", icon: FileText },
+    { id: "appointments", label: "Termine", icon: Calendar, count: appointments.length },
+    { id: "subcontractors", label: "Subunternehmer", icon: Users, count: assignedSubs.length },
+    { id: "documents", label: "Dokumente", icon: FileText, count: documents.length },
+    { id: "gallery", label: "Galerie", icon: ImageIcon },
+  ] as const;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => router.back()}
+          className="btn btn-ghost btn-sm"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 text-sm text-neutral-400">
+            {parentProject && <span>{parentProject.name}</span>}
+            {parentProject && <span>/</span>}
+          </div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-bold text-white">{project.name}</h1>
+            {/* Status Dropdown */}
+            {statusOptions.length > 0 && (
+              <select
+                value={currentStatus || ""}
+                onChange={(e) => updateStatus(e.target.value)}
+                className={`px-3 py-1 text-sm font-medium rounded-full border-0 cursor-pointer ${
+                  getStatusDef(currentStatus)
+                    ? statusColors[getStatusDef(currentStatus)!.color] || "bg-neutral-700 text-neutral-300"
+                    : "bg-neutral-700 text-neutral-300"
+                }`}
+              >
+                {statusOptions.sort((a, b) => a.sort - b.sort).map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Customer Card */}
+      {customer ? (
+        <div className="card p-4 border-l-4 border-l-orange-500">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-sm text-neutral-400 mb-1">
+                <User className="w-4 h-4" />
+                Kunde
+                <button
+                  onClick={openCustomerModal}
+                  className="text-orange-400 hover:text-orange-300 ml-1"
+                  title="Kunde ändern"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+              </div>
+              <h3 className="font-semibold text-white">
+                {customer.company_name || `${customer.first_name} ${customer.last_name}`}
+              </h3>
+              {getCustomerAddress() && (
+                <p className="text-sm text-neutral-400 flex items-center gap-1 mt-1">
+                  <MapPin className="w-3 h-3" />
+                  {getCustomerAddress()}
+                </p>
+              )}
+              {(customer.phone || customer.mobile) && (
+                <a 
+                  href={`tel:${customer.mobile || customer.phone}`} 
+                  className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-sm rounded-lg transition-colors"
+                >
+                  <Phone className="w-4 h-4" />
+                  {customer.mobile || customer.phone}
+                </a>
+              )}
+            </div>
+            <div className="flex flex-col gap-1">
+              {customer.phone && (
+                <a href={`tel:${customer.phone}`} className="flex items-center gap-1 text-sm text-neutral-400 hover:text-white">
+                  <Phone className="w-3 h-3" />
+                  {customer.phone}
+                </a>
+              )}
+              {customer.mobile && customer.mobile !== customer.phone && (
+                <a href={`tel:${customer.mobile}`} className="flex items-center gap-1 text-sm text-neutral-400 hover:text-white">
+                  <Phone className="w-3 h-3" />
+                  {customer.mobile}
+                </a>
+              )}
+              {customer.email && (
+                <a href={`mailto:${customer.email}`} className="flex items-center gap-1 text-sm text-neutral-400 hover:text-white">
+                  <Mail className="w-3 h-3" />
+                  {customer.email}
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="card p-4 border-l-4 border-l-neutral-600">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-neutral-400">
+              <User className="w-4 h-4" />
+              <span>Kein Kunde zugewiesen</span>
+            </div>
+            <button
+              onClick={openCustomerModal}
+              className="btn btn-primary btn-sm"
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Kunde zuweisen
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-neutral-800 overflow-x-auto">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
+              activeTab === tab.id
+                ? "text-orange-400 border-b-2 border-orange-400"
+                : "text-neutral-400 hover:text-white"
+            }`}
+          >
+            <tab.icon className="w-4 h-4 inline mr-1.5" />
+            {tab.label}
+            {tab.count !== undefined && tab.count > 0 && (
+              <span className="ml-1.5 px-1.5 py-0.5 text-xs bg-neutral-800 rounded">
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      <div className="mt-4">
+        {/* Overview */}
+        {activeTab === "overview" && (
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Quick Stats */}
+            <div className="card p-4">
+              <h3 className="font-semibold text-white mb-3">Status</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-neutral-400">Termine</span>
+                  <span className="text-white">{appointments.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-neutral-400">Abgeschlossen</span>
+                  <span className="text-green-400">
+                    {appointments.filter(a => a.status === "completed").length}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-neutral-400">Subunternehmer</span>
+                  <span className="text-white">{assignedSubs.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-neutral-400">Dokumente</span>
+                  <span className="text-white">{documents.length}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Next Appointment */}
+            <div className="card p-4">
+              <h3 className="font-semibold text-white mb-3">Nächster Termin</h3>
+              {appointments.filter(a => a.status !== "completed" && a.status !== "cancelled")[0] ? (
+                <div>
+                  <p className="font-medium text-white">
+                    {appointments.filter(a => a.status !== "completed")[0].title}
+                  </p>
+                  <p className="text-sm text-neutral-400 mt-1">
+                    {new Date(appointments.filter(a => a.status !== "completed")[0].start_time).toLocaleString("de-DE")}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-neutral-500 text-sm">Keine anstehenden Termine</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Appointments */}
+        {activeTab === "appointments" && (
+          <div className="space-y-4">
+            <div className="flex justify-end">
+              <button
+                onClick={openNewAppointment}
+                className="btn btn-primary btn-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Termin hinzufügen
+              </button>
+            </div>
+
+            {appointments.length === 0 ? (
+              <div className="card p-8 text-center text-neutral-500">
+                <Calendar className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>Noch keine Termine</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {appointments.map((appt) => (
+                  <div 
+                    key={appt.id} 
+                    className="card p-4 hover:bg-neutral-800/50 cursor-pointer transition-colors"
+                    onClick={() => openEditAppointment(appt)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm text-neutral-400">{appointmentTypeLabels[appt.appointment_type]}</span>
+                          <span className={`badge ${appointmentStatusColors[appt.status]}`}>
+                            {appointmentStatusLabels[appt.status]}
+                          </span>
+                        </div>
+                        <h4 className="font-semibold text-white">{appt.title}</h4>
+                        <p className="text-sm text-neutral-400 flex items-center gap-1 mt-1">
+                          <Clock className="w-3 h-3" />
+                          {new Date(appt.start_time).toLocaleString("de-DE")}
+                        </p>
+                        {appt.description && (
+                          <p className="text-sm text-neutral-500 mt-2">{appt.description}</p>
+                        )}
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openEditAppointment(appt); }}
+                          className="btn btn-ghost btn-sm"
+                          title="Bearbeiten"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        {appt.status !== "completed" && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); updateAppointmentStatus(appt.id, "completed"); }}
+                            className="btn btn-ghost btn-sm text-green-400"
+                            title="Als erledigt markieren"
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Subcontractors */}
+        {activeTab === "subcontractors" && (
+          <div className="space-y-4">
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowSubcontractorModal(true)}
+                className="btn btn-primary btn-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Subunternehmer zuweisen
+              </button>
+            </div>
+
+            {assignedSubs.length === 0 ? (
+              <div className="card p-8 text-center text-neutral-500">
+                <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>Noch keine Subunternehmer zugewiesen</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {assignedSubs.map((assignment) => (
+                  <div key={assignment.id} className="card p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-semibold text-white">
+                          {assignment.subcontractor?.company_name || "Unbekannt"}
+                        </h4>
+                        <p className="text-sm text-neutral-400">
+                          {assignment.trade} • {assignment.scope || "Kein Arbeitsumfang definiert"}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => removeSubcontractor(assignment.id)}
+                        className="btn btn-ghost btn-sm text-red-400"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Documents */}
+        {activeTab === "documents" && (() => {
+          const docCategories: { key: string; label: string; Icon: LucideIcon }[] = [
+            { key: "vertrag", label: "Verträge", Icon: FileSignature },
+            { key: "angebot", label: "Angebote", Icon: FileText },
+            { key: "rechnung", label: "Rechnungen", Icon: Receipt },
+            { key: "aufmass", label: "Aufmaße", Icon: Ruler },
+            { key: "plan", label: "Pläne", Icon: ClipboardList },
+            { key: "foto", label: "Fotos", Icon: Camera },
+            { key: "protokoll", label: "Protokolle", Icon: FileCheck },
+            { key: "unterschrift", label: "Unterschriften", Icon: Pencil },
+            { key: "datenschutz", label: "Datenschutz", Icon: Shield },
+            { key: "sonstiges", label: "Sonstiges", Icon: Folder },
+          ];
+
+          const groupedDocs = docCategories
+            .map(cat => ({
+              ...cat,
+              docs: documents.filter(d => d.document_type === cat.key)
+            }))
+            .filter(cat => cat.docs.length > 0);
+
+          return (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <p className="text-sm text-neutral-400">{documents.length} Dokumente</p>
+                <button 
+                  onClick={() => setShowDocumentModal(true)}
+                  className="btn btn-primary btn-sm"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Hochladen
+                </button>
+              </div>
+
+              {documents.length === 0 ? (
+                <div className="card p-8 text-center text-neutral-500">
+                  <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>Noch keine Dokumente</p>
+                  <button
+                    onClick={() => setShowDocumentModal(true)}
+                    className="btn btn-primary btn-sm mt-4"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Erstes Dokument hochladen
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {groupedDocs.map(category => (
+                    <div key={category.key}>
+                      <h3 className="text-sm font-medium text-neutral-400 mb-2 flex items-center gap-2">
+                        <category.Icon className="w-4 h-4" />
+                        {category.label}
+                        <span className="text-neutral-600">({category.docs.length})</span>
+                      </h3>
+                      <div className="card divide-y divide-neutral-800">
+                        {category.docs.map((doc) => (
+                          <div
+                            key={doc.id}
+                            className="flex items-center justify-between p-3 hover:bg-neutral-800/50 cursor-pointer transition-colors group"
+                            onClick={() => doc.storage_url && setPreviewDoc(doc)}
+                          >
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <FileText className="w-5 h-5 text-neutral-500 flex-shrink-0" />
+                              <div className="min-w-0">
+                                <h4 className="font-medium text-white truncate group-hover:text-orange-400 transition-colors">
+                                  {doc.name}
+                                </h4>
+                                <p className="text-xs text-neutral-500">
+                                  {formatDate(doc.created_at)}
+                                  {doc.file_size && ` • ${Math.round(doc.file_size / 1024)} KB`}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); deleteDocument(doc.id, doc.storage_path); }}
+                              className="btn btn-ghost btn-sm text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Löschen"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Gallery */}
+        {activeTab === "gallery" && (() => {
+          const images = documents.filter(doc => 
+            doc.mime_type?.startsWith("image/") || doc.document_type === "foto"
+          );
+          
+          return (
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Bilder ({images.length})</h3>
+                <button
+                  onClick={() => setShowDocumentModal(true)}
+                  className="btn btn-primary btn-sm"
+                >
+                  <Plus className="w-4 h-4 mr-1" /> Bild hochladen
+                </button>
+              </div>
+
+              {images.length === 0 ? (
+                <div className="card p-8 text-center text-neutral-500">
+                  <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>Noch keine Bilder vorhanden</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {images.map((img, idx) => (
+                    <div key={img.id} className="group relative">
+                      <button
+                        onClick={() => setLightboxIndex(idx)}
+                        className="block w-full aspect-square rounded-lg overflow-hidden bg-neutral-800 hover:ring-2 hover:ring-orange-500 transition-all"
+                      >
+                        <img
+                          src={img.storage_url || ""}
+                          alt={img.name}
+                          className="w-full h-full object-cover"
+                        />
+                      </button>
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        <p className="text-sm text-white truncate">{img.name}</p>
+                        <p className="text-xs text-neutral-400">{formatDate(img.created_at)}</p>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteDocument(img.id, img.storage_path); }}
+                        className="absolute top-2 right-2 p-1.5 bg-red-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700"
+                        title="Löschen"
+                      >
+                        <Trash2 className="w-3 h-3 text-white" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Lightbox */}
+              {lightboxIndex !== null && images[lightboxIndex] && (
+                <div 
+                  className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center"
+                  onClick={() => setLightboxIndex(null)}
+                >
+                  {/* Close Button */}
+                  <button
+                    onClick={() => setLightboxIndex(null)}
+                    className="absolute top-4 right-4 p-2 text-white/70 hover:text-white transition-colors"
+                  >
+                    <X className="w-8 h-8" />
+                  </button>
+
+                  {/* Download Button */}
+                  <a
+                    href={images[lightboxIndex].storage_url || "#"}
+                    download={images[lightboxIndex].name}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute top-4 right-16 p-2 text-white/70 hover:text-white transition-colors"
+                  >
+                    <Download className="w-7 h-7" />
+                  </a>
+
+                  {/* Counter */}
+                  <div className="absolute top-4 left-4 text-white/70 text-sm">
+                    {lightboxIndex + 1} / {images.length}
+                  </div>
+
+                  {/* Previous Button */}
+                  {images.length > 1 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setLightboxIndex((lightboxIndex - 1 + images.length) % images.length); }}
+                      className="absolute left-4 p-2 text-white/70 hover:text-white transition-colors"
+                    >
+                      <ChevronLeft className="w-10 h-10" />
+                    </button>
+                  )}
+
+                  {/* Image */}
+                  <img
+                    src={images[lightboxIndex].storage_url || ""}
+                    alt={images[lightboxIndex].name}
+                    className="max-h-[85vh] max-w-[90vw] object-contain"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+
+                  {/* Next Button */}
+                  {images.length > 1 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setLightboxIndex((lightboxIndex + 1) % images.length); }}
+                      className="absolute right-4 p-2 text-white/70 hover:text-white transition-colors"
+                    >
+                      <ChevronRight className="w-10 h-10" />
+                    </button>
+                  )}
+
+                  {/* Image Info */}
+                  <div className="absolute bottom-4 left-0 right-0 text-center text-white">
+                    <p className="font-medium">{images[lightboxIndex].name}</p>
+                    <p className="text-sm text-white/60">{formatDate(images[lightboxIndex].created_at)}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* Modal: Appointment */}
+      <Modal
+        open={showAppointmentModal}
+        onClose={() => { setShowAppointmentModal(false); setEditingAppointment(null); }}
+        title={editingAppointment ? "Termin bearbeiten" : "Neuer Termin"}
+      >
+        <form onSubmit={saveAppointment} className="space-y-4">
+          <div>
+            <label className="label">Titel *</label>
+            <input
+              type="text"
+              className="input"
+              value={appointmentForm.title}
+              onChange={(e) => setAppointmentForm({ ...appointmentForm, title: e.target.value })}
+              required
+            />
+          </div>
+
+          <div>
+            <label className="label">Terminart *</label>
+            <select
+              className="input"
+              value={appointmentForm.appointment_type}
+              onChange={(e) => setAppointmentForm({ ...appointmentForm, appointment_type: e.target.value as AppointmentType })}
+            >
+              {Object.entries(appointmentTypeLabels).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Start *</label>
+              <input
+                type="datetime-local"
+                className="input"
+                value={appointmentForm.start_time}
+                onChange={(e) => setAppointmentForm({ ...appointmentForm, start_time: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <label className="label">Ende</label>
+              <input
+                type="datetime-local"
+                className="input"
+                value={appointmentForm.end_time}
+                onChange={(e) => setAppointmentForm({ ...appointmentForm, end_time: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Beteiligte Subunternehmer</label>
+            <select
+              className="input"
+              multiple
+              value={appointmentForm.subcontractor_ids}
+              onChange={(e) => {
+                const values = Array.from(e.target.selectedOptions, option => option.value);
+                setAppointmentForm({ ...appointmentForm, subcontractor_ids: values });
+              }}
+            >
+              {allSubcontractors.map((sub) => (
+                <option key={sub.id} value={sub.id}>{sub.company_name}</option>
+              ))}
+            </select>
+            <p className="text-xs text-neutral-500 mt-1">Strg/Cmd gedrückt halten für Mehrfachauswahl</p>
+          </div>
+
+          <div>
+            <label className="label">Beschreibung</label>
+            <textarea
+              className="input"
+              rows={3}
+              value={appointmentForm.description}
+              onChange={(e) => setAppointmentForm({ ...appointmentForm, description: e.target.value })}
+            />
+          </div>
+
+          {editingAppointment && (
+            <div>
+              <label className="label">Status</label>
+              <select
+                className="input"
+                value={editingAppointment.status}
+                onChange={(e) => {
+                  updateAppointmentStatus(editingAppointment.id, e.target.value as AppointmentStatus);
+                  setEditingAppointment({ ...editingAppointment, status: e.target.value as AppointmentStatus });
+                }}
+              >
+                {Object.entries(appointmentStatusLabels).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex justify-between gap-2 pt-2">
+            <div>
+              {editingAppointment && (
+                <button 
+                  type="button" 
+                  onClick={() => { deleteAppointment(editingAppointment.id); setShowAppointmentModal(false); }}
+                  className="btn btn-ghost text-red-400"
+                >
+                  Löschen
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => { setShowAppointmentModal(false); setEditingAppointment(null); }} className="btn btn-ghost">
+                Abbrechen
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? <Spinner /> : (editingAppointment ? "Speichern" : "Termin anlegen")}
+              </button>
+            </div>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal: Assign Subcontractor */}
+      <Modal
+        open={showSubcontractorModal}
+        onClose={() => setShowSubcontractorModal(false)}
+        title="Subunternehmer zuweisen"
+      >
+        <form onSubmit={assignSubcontractor} className="space-y-4">
+          <div>
+            <label className="label">Subunternehmer auswählen *</label>
+            <select
+              className="input"
+              value={selectedSubId}
+              onChange={(e) => setSelectedSubId(e.target.value)}
+              required
+            >
+              <option value="">-- Bitte wählen --</option>
+              {allSubcontractors
+                .filter(s => !assignedSubs.some(a => a.subcontractor_id === s.id))
+                .map((sub) => (
+                  <option key={sub.id} value={sub.id}>
+                    {sub.company_name} ({sub.trade})
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setShowSubcontractorModal(false)} className="btn btn-ghost">
+              Abbrechen
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={saving || !selectedSubId}>
+              {saving ? <Spinner /> : "Zuweisen"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal: Upload Document */}
+      <Modal
+        open={showDocumentModal}
+        onClose={() => setShowDocumentModal(false)}
+        title="Dokument hochladen"
+      >
+        <form onSubmit={uploadDocument} className="space-y-4">
+          <div>
+            <label className="label">Datei auswählen *</label>
+            <input
+              type="file"
+              className="input file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-orange-500 file:text-white hover:file:bg-orange-600"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="label">Dokumentname</label>
+            <input
+              type="text"
+              name="docName"
+              className="input"
+              placeholder="Optional - sonst wird Dateiname verwendet"
+            />
+          </div>
+
+          <div>
+            <label className="label">Dokumenttyp</label>
+            <select name="docType" className="input" defaultValue="sonstiges">
+              <option value="vertrag">Vertrag</option>
+              <option value="angebot">Angebot</option>
+              <option value="rechnung">Rechnung</option>
+              <option value="aufmass">Aufmaß</option>
+              <option value="plan">Plan</option>
+              <option value="foto">Foto</option>
+              <option value="protokoll">Protokoll</option>
+              <option value="unterschrift">Unterschrift</option>
+              <option value="datenschutz">Datenschutz</option>
+              <option value="sonstiges">Sonstiges</option>
+            </select>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setShowDocumentModal(false)} className="btn btn-ghost">
+              Abbrechen
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={uploading}>
+              {uploading ? <Spinner /> : "Hochladen"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Document Preview Overlay */}
+      {previewDoc && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/95 flex flex-col"
+          onClick={() => setPreviewDoc(null)}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-neutral-800">
+            <div className="text-white">
+              <h3 className="font-medium">{previewDoc.name}</h3>
+              <p className="text-sm text-neutral-400">
+                {previewDoc.document_type} • {formatDate(previewDoc.created_at)}
+                {previewDoc.file_size && ` • ${Math.round(previewDoc.file_size / 1024)} KB`}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <a
+                href={previewDoc.storage_url || "#"}
+                download={previewDoc.name}
+                onClick={(e) => e.stopPropagation()}
+                className="btn btn-ghost btn-sm text-white"
+                title="Herunterladen"
+              >
+                <Download className="w-5 h-5" />
+              </a>
+              <a
+                href={previewDoc.storage_url || "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="btn btn-ghost btn-sm text-white"
+                title="In neuem Tab öffnen"
+              >
+                <ExternalLink className="w-5 h-5" />
+              </a>
+              <button
+                onClick={() => setPreviewDoc(null)}
+                className="btn btn-ghost btn-sm text-white"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-hidden p-4" onClick={(e) => e.stopPropagation()}>
+            {previewDoc.mime_type?.startsWith("image/") ? (
+              <div className="h-full flex items-center justify-center">
+                <img
+                  src={previewDoc.storage_url || ""}
+                  alt={previewDoc.name}
+                  className="max-h-full max-w-full object-contain"
+                />
+              </div>
+            ) : previewDoc.mime_type === "application/pdf" ? (
+              <iframe
+                src={previewDoc.storage_url || ""}
+                className="w-full h-full rounded-lg bg-white"
+                title={previewDoc.name}
+              />
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-neutral-400">
+                <FileText className="w-24 h-24 mb-4 opacity-50" />
+                <p className="text-lg mb-2">Vorschau nicht verfügbar</p>
+                <p className="text-sm mb-4">Dateityp: {previewDoc.mime_type || "Unbekannt"}</p>
+                <a
+                  href={previewDoc.storage_url || "#"}
+                  download={previewDoc.name}
+                  className="btn btn-primary"
+                >
+                  <Download className="w-4 h-4 mr-2" /> Herunterladen
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Change Customer */}
+      <Modal
+        open={showCustomerModal}
+        onClose={() => setShowCustomerModal(false)}
+        title="Kunde zuweisen"
+      >
+        <div className="space-y-4">
+          <div>
+            <input
+              type="text"
+              placeholder="Kunde suchen..."
+              value={customerSearch}
+              onChange={(e) => setCustomerSearch(e.target.value)}
+              className="input w-full"
+            />
+          </div>
+          
+          <div className="max-h-64 overflow-y-auto space-y-1">
+            <button
+              onClick={() => setSelectedCustomerId("")}
+              className={`w-full text-left px-3 py-2 rounded transition-colors ${
+                selectedCustomerId === "" 
+                  ? "bg-orange-500/20 text-orange-400" 
+                  : "hover:bg-neutral-800 text-neutral-400"
+              }`}
+            >
+              <span className="italic">Kein Kunde</span>
+            </button>
+            {allCustomers
+              .filter(c => 
+                !customerSearch ||
+                c.last_name?.toLowerCase().includes(customerSearch.toLowerCase()) ||
+                c.company_name?.toLowerCase().includes(customerSearch.toLowerCase()) ||
+                c.first_name?.toLowerCase().includes(customerSearch.toLowerCase())
+              )
+              .map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedCustomerId(c.id)}
+                  className={`w-full text-left px-3 py-2 rounded transition-colors ${
+                    selectedCustomerId === c.id 
+                      ? "bg-orange-500/20 text-orange-400" 
+                      : "hover:bg-neutral-800 text-white"
+                  }`}
+                >
+                  <div className="font-medium">
+                    {c.company_name || `${c.first_name || ""} ${c.last_name}`}
+                  </div>
+                  {c.city && (
+                    <div className="text-xs text-neutral-500">{c.city}</div>
+                  )}
+                </button>
+              ))}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button 
+              type="button" 
+              onClick={() => setShowCustomerModal(false)} 
+              className="btn btn-ghost"
+            >
+              Abbrechen
+            </button>
+            <button 
+              onClick={updateCustomer} 
+              className="btn btn-primary" 
+              disabled={saving}
+            >
+              {saving ? <Spinner /> : "Speichern"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
