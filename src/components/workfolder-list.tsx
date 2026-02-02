@@ -11,14 +11,9 @@ import {
   Plus,
   ChevronRight,
   Users,
-  Calendar,
-  FileText,
   Search,
-  ListTodo,
-  CheckCircle,
-  Circle,
 } from "lucide-react";
-import type { Project, Customer, Task, WorkfolderStatusDef } from "@/types/database";
+import type { Project, Customer, WorkfolderStatusDef } from "@/types/database";
 
 // Partial customer type for dropdown selections
 type CustomerOption = Pick<Customer, "id" | "company_name" | "first_name" | "last_name">;
@@ -51,13 +46,11 @@ interface Props {
 export function WorkfolderList({ brand }: Props) {
   const [workfolders, setWorkfolders] = useState<(Project & { customer?: Customer })[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNewWorkfolder, setShowNewWorkfolder] = useState(false);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"projects" | "tasks">("projects");
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -98,27 +91,7 @@ export function WorkfolderList({ brand }: Props) {
       .order("company_name");
     setCustomers(custs || []);
 
-    // Load legacy tasks
-    const { data: legacyTasks } = await supabase
-      .from("tasks")
-      .select("*")
-      .eq("project_id", brand.id)
-      .order("created_at", { ascending: false });
-    setTasks(legacyTasks || []);
-
     setLoading(false);
-  }
-
-  async function toggleTaskStatus(task: Task) {
-    const newStatus = task.status === "done" ? "open" : "done";
-    await supabase
-      .from("tasks")
-      .update({ 
-        status: newStatus,
-        completed_at: newStatus === "done" ? new Date().toISOString() : null
-      })
-      .eq("id", task.id);
-    loadData();
   }
 
   async function createWorkfolder(e: React.FormEvent) {
@@ -237,55 +210,8 @@ export function WorkfolderList({ brand }: Props) {
         </div>
       )}
 
-      {/* Tasks Tab */}
-      {activeTab === "tasks" && (
-        <div className="space-y-2">
-          <p className="text-sm text-neutral-500 mb-4">
-            Diese Tasks stammen aus der alten Struktur. Du kannst sie hier abhaken oder löschen.
-          </p>
-          {tasks.map((task) => (
-            <div
-              key={task.id}
-              className={`card p-3 flex items-center gap-3 ${
-                task.status === "done" ? "opacity-60" : ""
-              }`}
-            >
-              <button
-                onClick={() => toggleTaskStatus(task)}
-                className={`flex-shrink-0 ${
-                  task.status === "done" ? "text-green-500" : "text-neutral-500"
-                }`}
-              >
-                {task.status === "done" ? (
-                  <CheckCircle className="w-5 h-5" />
-                ) : (
-                  <Circle className="w-5 h-5" />
-                )}
-              </button>
-              <div className="flex-1 min-w-0">
-                <p className={`font-medium ${task.status === "done" ? "line-through text-neutral-500" : "text-white"}`}>
-                  {task.title}
-                </p>
-                {task.description && (
-                  <p className="text-sm text-neutral-500 truncate">{task.description}</p>
-                )}
-              </div>
-              <span className={`text-xs px-2 py-1 rounded ${
-                task.status === "done" ? "bg-green-500/20 text-green-400" :
-                task.status === "in_progress" ? "bg-blue-500/20 text-blue-400" :
-                "bg-neutral-700 text-neutral-400"
-              }`}>
-                {task.status === "done" ? "Erledigt" : 
-                 task.status === "in_progress" ? "In Arbeit" : "Offen"}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Workfolders Grid (nur bei Projekten-Tab) */}
-      {activeTab === "projects" && (
-        filtered.length === 0 ? (
+      {/* Workfolders List */}
+      {filtered.length === 0 ? (
         <div className="card p-8 text-center text-neutral-500">
           <FolderOpen className="w-12 h-12 mx-auto mb-3 opacity-50" />
           {workfolders.length === 0 ? (
@@ -331,7 +257,7 @@ export function WorkfolderList({ brand }: Props) {
             );
           })}
         </div>
-      ))}
+      )}
 
       {/* Modal: Neues Projekt */}
       <Modal
