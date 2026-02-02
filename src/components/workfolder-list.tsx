@@ -186,100 +186,50 @@ export function WorkfolderList({ brand }: Props) {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push("/projects")}
-            className="btn btn-ghost btn-sm"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <span className="text-2xl">{brandIcons[brand.slug] || "📁"}</span>
-            {brand.name}
-            <span className="text-neutral-500 font-normal text-base ml-2">
-              ({workfolders.length} Projekte)
-            </span>
-          </h1>
-        </div>
-        <button
-          onClick={() => setShowNewWorkfolder(true)}
-          className="btn btn-primary btn-sm"
-        >
+      <div className="flex items-center gap-2">
+        <button onClick={() => router.push("/")} className="p-2 -ml-2">
+          <ArrowLeft className="w-5 h-5 text-neutral-400" />
+        </button>
+        <h1 className="text-lg font-bold text-white flex-1 truncate">{brand.name}</h1>
+        <button onClick={() => setShowNewWorkfolder(true)} className="btn btn-primary btn-sm">
           <Plus className="w-4 h-4" />
-          Neues Projekt
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-neutral-800">
-        <button
-          onClick={() => setActiveTab("projects")}
-          className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2 ${
-            activeTab === "projects"
-              ? "text-orange-400 border-b-2 border-orange-400"
-              : "text-neutral-400 hover:text-white"
-          }`}
-        >
-          <FolderOpen className="w-4 h-4" />
-          Projekte
-          <span className="px-1.5 py-0.5 text-xs bg-neutral-800 rounded">{workfolders.length}</span>
-        </button>
-        {tasks.length > 0 && (
-          <button
-            onClick={() => setActiveTab("tasks")}
-            className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2 ${
-              activeTab === "tasks"
-                ? "text-orange-400 border-b-2 border-orange-400"
-                : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            <ListTodo className="w-4 h-4" />
-            Alte Tasks
-            <span className="px-1.5 py-0.5 text-xs bg-neutral-800 rounded">{tasks.length}</span>
-          </button>
-        )}
-      </div>
-
-      {/* Status-Filter (nur bei Projekten) */}
-      {activeTab === "projects" && statuses.length > 0 && (
-        <div className="flex gap-2 flex-wrap">
+      {/* Status Pills - Horizontal Scroll */}
+      {statuses.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3">
           <button
             onClick={() => setStatusFilter(null)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
-              !statusFilter
-                ? "bg-orange-500 text-white"
-                : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+            className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap ${
+              !statusFilter ? "bg-orange-500 text-white" : "bg-neutral-800 text-neutral-400"
             }`}
           >
-            Alle ({workfolders.length})
+            Alle
           </button>
-          {statuses.sort((a, b) => a.sort - b.sort).map((status) => {
-            const count = workfolders.filter(wf => wf.workfolder_status === status.key).length;
-            return (
-              <button
-                key={status.key}
-                onClick={() => setStatusFilter(statusFilter === status.key ? null : status.key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                  statusFilter === status.key
-                    ? statusColors[status.color] || "bg-neutral-600 text-white"
-                    : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
-                }`}
-              >
-                {status.label} ({count})
-              </button>
-            );
-          })}
+          {statuses.sort((a, b) => a.sort - b.sort).map((status) => (
+            <button
+              key={status.key}
+              onClick={() => setStatusFilter(statusFilter === status.key ? null : status.key)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap ${
+                statusFilter === status.key
+                  ? statusColors[status.color] || "bg-neutral-600 text-white"
+                  : "bg-neutral-800 text-neutral-400"
+              }`}
+            >
+              {status.label}
+            </button>
+          ))}
         </div>
       )}
 
-      {/* Search (nur bei Projekten) */}
-      {activeTab === "projects" && workfolders.length > 0 && (
+      {/* Search */}
+      {workfolders.length > 5 && (
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
           <input
             type="text"
-            placeholder="Projekte durchsuchen..."
+            placeholder="Suchen..."
             className="input pl-10"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -354,47 +304,31 @@ export function WorkfolderList({ brand }: Props) {
           )}
         </div>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-2">
           {filtered.map((wf) => {
             const statusDef = getStatusDef(wf.workfolder_status);
             return (
-            <div
-              key={wf.id}
-              onClick={() => router.push(`/projects/${wf.slug}`)}
-              className="card p-4 hover:border-orange-500/50 cursor-pointer transition-all group"
-            >
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-white group-hover:text-orange-400 transition-colors">
-                    {wf.name}
-                  </h3>
-                  {statusDef && (
-                    <span className={`px-2 py-0.5 text-xs rounded-full ${statusColors[statusDef.color] || "bg-neutral-700 text-neutral-300"}`}>
-                      {statusDef.label}
-                    </span>
-                  )}
+              <div
+                key={wf.id}
+                onClick={() => router.push(`/projects/${wf.slug}`)}
+                className="card p-3 flex items-center gap-3 cursor-pointer active:bg-neutral-800/50"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-white truncate">{wf.name}</span>
+                    {statusDef && (
+                      <span className={`px-2 py-0.5 text-[10px] rounded-full shrink-0 ${statusColors[statusDef.color] || "bg-neutral-700 text-neutral-300"}`}>
+                        {statusDef.label}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-neutral-500 mt-0.5 truncate">
+                    {getCustomerName(wf.customer)}
+                  </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-orange-400" />
+                <ChevronRight className="w-5 h-5 text-neutral-600 shrink-0" />
               </div>
-
-              {wf.description && (
-                <p className="text-sm text-neutral-400 mb-3 line-clamp-2">
-                  {wf.description}
-                </p>
-              )}
-
-              <div className="flex items-center gap-4 text-xs text-neutral-500">
-                <span className="flex items-center gap-1">
-                  <Users className="w-3 h-3" />
-                  {getCustomerName(wf.customer)}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  {new Date(wf.created_at || "").toLocaleDateString("de-DE")}
-                </span>
-              </div>
-            </div>
-          );
+            );
           })}
         </div>
       ))}
