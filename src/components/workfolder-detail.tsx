@@ -1586,6 +1586,103 @@ export function WorkfolderDetail({ project }: Props) {
                     ))}
                   </select>
                 )}
+
+                {field.type === "signature" && (
+                  <div className="space-y-2">
+                    <canvas
+                      id={`sig-${field.id}`}
+                      className="w-full h-32 border border-neutral-700 rounded bg-white cursor-crosshair touch-none"
+                      onMouseDown={(e) => {
+                        const canvas = e.currentTarget;
+                        const ctx = canvas.getContext("2d");
+                        if (!ctx) return;
+                        const rect = canvas.getBoundingClientRect();
+                        ctx.beginPath();
+                        ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+                        const onMove = (ev: MouseEvent) => {
+                          ctx.lineTo(ev.clientX - rect.left, ev.clientY - rect.top);
+                          ctx.stroke();
+                        };
+                        const onUp = () => {
+                          setFormData({ ...formData, [field.id]: canvas.toDataURL() });
+                          window.removeEventListener("mousemove", onMove);
+                          window.removeEventListener("mouseup", onUp);
+                        };
+                        window.addEventListener("mousemove", onMove);
+                        window.addEventListener("mouseup", onUp);
+                      }}
+                      onTouchStart={(e) => {
+                        const canvas = e.currentTarget;
+                        const ctx = canvas.getContext("2d");
+                        if (!ctx) return;
+                        const rect = canvas.getBoundingClientRect();
+                        const touch = e.touches[0];
+                        ctx.beginPath();
+                        ctx.moveTo(touch.clientX - rect.left, touch.clientY - rect.top);
+                        const onMove = (ev: TouchEvent) => {
+                          ev.preventDefault();
+                          const t = ev.touches[0];
+                          ctx.lineTo(t.clientX - rect.left, t.clientY - rect.top);
+                          ctx.stroke();
+                        };
+                        const onEnd = () => {
+                          setFormData({ ...formData, [field.id]: canvas.toDataURL() });
+                          canvas.removeEventListener("touchmove", onMove);
+                          canvas.removeEventListener("touchend", onEnd);
+                        };
+                        canvas.addEventListener("touchmove", onMove, { passive: false });
+                        canvas.addEventListener("touchend", onEnd);
+                      }}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="text-xs text-neutral-400 hover:text-white"
+                        onClick={() => {
+                          const canvas = document.getElementById(`sig-${field.id}`) as HTMLCanvasElement;
+                          const ctx = canvas?.getContext("2d");
+                          if (ctx) {
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            setFormData({ ...formData, [field.id]: "" });
+                          }
+                        }}
+                      >
+                        Löschen
+                      </button>
+                    </div>
+                    {formData[field.id] && (
+                      <div className="text-xs text-green-500">Unterschrift erfasst</div>
+                    )}
+                  </div>
+                )}
+
+                {field.type === "photo" && (
+                  <div className="space-y-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="input text-sm"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            setFormData({ ...formData, [field.id]: reader.result });
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                    {formData[field.id] && (
+                      <img 
+                        src={formData[field.id]} 
+                        alt="Foto" 
+                        className="max-h-32 rounded border border-neutral-700"
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             ))}
 
