@@ -1719,12 +1719,19 @@ export function WorkfolderDetail({ project }: Props) {
               // Find the field label from the template
               const template = formTemplates.find(t => t.id === viewingSubmission.form_template_id);
               const field = template?.fields?.find((f: any) => f.id === fieldId);
+              const isImage = typeof value === "string" && value.startsWith("data:image");
               
               return (
                 <div key={fieldId} className="border-b border-neutral-800 pb-3">
                   <div className="text-sm text-neutral-400">{field?.label || fieldId}</div>
                   <div className="text-white mt-1">
-                    {typeof value === "boolean" ? (value ? "Ja" : "Nein") : String(value) || "—"}
+                    {isImage ? (
+                      <img src={value as string} alt={field?.label || "Bild"} className="max-h-40 rounded border border-neutral-700 bg-white" />
+                    ) : typeof value === "boolean" ? (
+                      value ? "Ja" : "Nein"
+                    ) : (
+                      String(value) || "—"
+                    )}
                   </div>
                 </div>
               );
