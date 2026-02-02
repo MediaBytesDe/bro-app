@@ -12,8 +12,10 @@ import {
   ChevronRight,
   Users,
   Search,
+  CheckCircle,
+  Circle,
 } from "lucide-react";
-import type { Project, Customer, WorkfolderStatusDef } from "@/types/database";
+import type { Project, Customer, Task, WorkfolderStatusDef } from "@/types/database";
 
 // Partial customer type for dropdown selections
 type CustomerOption = Pick<Customer, "id" | "company_name" | "first_name" | "last_name">;
@@ -46,6 +48,7 @@ interface Props {
 export function WorkfolderList({ brand }: Props) {
   const [workfolders, setWorkfolders] = useState<(Project & { customer?: Customer })[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNewWorkfolder, setShowNewWorkfolder] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -91,7 +94,27 @@ export function WorkfolderList({ brand }: Props) {
       .order("company_name");
     setCustomers(custs || []);
 
+    // Load legacy tasks
+    const { data: legacyTasks } = await supabase
+      .from("tasks")
+      .select("*")
+      .eq("project_id", brand.id)
+      .order("created_at", { ascending: false });
+    setTasks(legacyTasks || []);
+
     setLoading(false);
+  }
+
+  async function toggleTaskStatus(task: Task) {
+    const newStatus = task.status === "done" ? "open" : "done";
+    await supabase
+      .from("tasks")
+      .update({ 
+        status: newStatus,
+        completed_at: newStatus === "done" ? new Date().toISOString() : null
+      })
+      .eq("id", task.id);
+    loadData();
   }
 
   async function createWorkfolder(e: React.FormEvent) {
@@ -207,6 +230,34 @@ export function WorkfolderList({ brand }: Props) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+        </div>
+      )}
+
+      {/* Tasks Section */}
+      {tasks.length > 0 && (
+        <div className="card p-3">
+          <h3 className="text-sm font-medium text-neutral-400 mb-2">Offene Tasks ({tasks.filter(t => t.status !== "done").length})</h3>
+          <div className="space-y-1">
+            {tasks.slice(0, 5).map((task) => (
+              <div
+                key={task.id}
+                className={`flex items-center gap-2 p-2 rounded ${task.status === "done" ? "opacity-50" : ""}`}
+              >
+                <button
+                  onClick={() => toggleTaskStatus(task)}
+                  className={task.status === "done" ? "text-green-500" : "text-neutral-500"}
+                >
+                  {task.status === "done" ? <CheckCircle className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
+                </button>
+                <span className={`flex-1 text-sm truncate ${task.status === "done" ? "line-through text-neutral-500" : "text-white"}`}>
+                  {task.title}
+                </span>
+              </div>
+            ))}
+            {tasks.length > 5 && (
+              <div className="text-xs text-neutral-500 text-center pt-1">+{tasks.length - 5} weitere</div>
+            )}
+          </div>
         </div>
       )}
 
