@@ -122,7 +122,7 @@ export function LogsTable() {
                 </div>
                 <span className="text-xs text-neutral-500 flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  {formatRelativeTime(log.created_at)}
+                  {log.created_at ? formatRelativeTime(log.created_at) : "—"}
                 </span>
               </button>
             );

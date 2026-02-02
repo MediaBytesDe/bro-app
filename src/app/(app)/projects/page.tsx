@@ -124,7 +124,7 @@ export default function ProjectsPage() {
     }
   }
 
-  function getCustomerName(customer: Customer | null) {
+  function getCustomerName(customer: CustomerOption | null) {
     if (!customer) return "Kein Kunde";
     if (customer.company_name) return customer.company_name;
     return `${customer.first_name || ""} ${customer.last_name || ""}`.trim() || "Unbenannt";

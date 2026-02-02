@@ -20,6 +20,9 @@ import {
 import { formatDate } from "@/lib/utils";
 import type { Document, DocumentType, Project } from "@/types/database";
 
+// Partial type for dropdown selections
+type ProjectOption = Pick<Project, "id" | "name" | "slug">;
+
 const documentTypeLabels: Record<DocumentType, string> = {
   vertrag: "Vertrag",
   angebot: "Angebot",
@@ -48,7 +51,7 @@ const documentTypeIcons: Record<DocumentType, React.ReactNode> = {
 
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -166,8 +169,8 @@ export default function DocumentsPage() {
   }
 
   async function openDocument(doc: Document) {
-    if (doc.onedrive_url) {
-      window.open(doc.onedrive_url, "_blank");
+    if (doc.onedrive_web_url) {
+      window.open(doc.onedrive_web_url, "_blank");
     } else {
       // Get download URL
       const res = await fetch(`/api/documents?id=${doc.id}`);
@@ -264,7 +267,7 @@ export default function DocumentsPage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-4 mt-1 text-sm text-neutral-500">
-                  <span>{formatFileSize(doc.size_bytes)}</span>
+                  <span>{formatFileSize(doc.file_size)}</span>
                   <span>{formatDate(doc.created_at)}</span>
                   {(doc as Document & { projects?: { name: string } }).projects?.name && (
                     <span className="text-blue-400">
@@ -279,9 +282,9 @@ export default function DocumentsPage() {
 
               {/* Actions */}
               <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                {doc.onedrive_url && (
+                {doc.onedrive_web_url && (
                   <a
-                    href={doc.onedrive_url}
+                    href={doc.onedrive_web_url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn btn-ghost btn-icon !w-10 !h-10 !min-h-0"

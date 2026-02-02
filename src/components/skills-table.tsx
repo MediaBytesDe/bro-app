@@ -54,9 +54,9 @@ export function SkillsTable() {
     setForm({
       name: skill.name,
       description: skill.description || "",
-      trigger: skill.trigger,
+      trigger: skill.trigger || "",
       steps: skill.steps || "",
-      active: skill.active,
+      active: skill.active ?? true,
     });
     setShowForm(true);
   }
@@ -140,9 +140,9 @@ export function SkillsTable() {
                       <span className={`badge ${skill.active ? "badge-success" : "badge-gray"}`}>
                         {skill.active ? "Aktiv" : "Inaktiv"}
                       </span>
-                      <span className="badge badge-info">{triggerLabels[skill.trigger]}</span>
+                      <span className="badge badge-info">{triggerLabels[skill.trigger || "manual"]}</span>
                       <span className="text-xs text-neutral-600">
-                        Aktualisiert: {new Date(skill.updated_at).toLocaleDateString("de-DE")}
+                        Aktualisiert: {skill.updated_at ? new Date(skill.updated_at).toLocaleDateString("de-DE") : "—"}
                       </span>
                     </div>
                   </div>

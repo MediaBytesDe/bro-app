@@ -110,7 +110,7 @@ export function LeadsTable() {
       phone: lead.phone || "",
       company: lead.company || "",
       source: lead.source || "",
-      status: lead.status,
+      status: lead.status || "new",
       notes: lead.notes || "",
       assigned_to: lead.assigned_to || "",
       value: lead.value?.toString() || "",
@@ -202,7 +202,7 @@ export function LeadsTable() {
               onClick={() => router.push(`/leads/${lead.id}`)}
             >
               {/* Status Badge */}
-              <span className={`badge ${statusColors[lead.status]} shrink-0`}>{statusLabels[lead.status]}</span>
+              <span className={`badge ${statusColors[lead.status || "new"]} shrink-0`}>{statusLabels[lead.status || "new"]}</span>
 
               {/* Content */}
               <div className="flex-1 min-w-0">

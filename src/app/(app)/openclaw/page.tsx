@@ -224,7 +224,7 @@ export default function OpenClawPage() {
                   {typeIcons[log.type] || <FileText className="w-4 h-4 text-neutral-400" />}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-white truncate">{log.message || "—"}</p>
-                    <p className="text-xs text-neutral-500">{formatRelativeTime(log.created_at)}</p>
+                    <p className="text-xs text-neutral-500">{log.created_at ? formatRelativeTime(log.created_at) : "—"}</p>
                   </div>
                 </div>
               ))

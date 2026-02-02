@@ -368,14 +368,6 @@ export function WorkfolderDetail({ project }: Props) {
     loadData();
   }
 
-  async function updateAppointmentStatus(id: string, status: AppointmentStatus) {
-    await supabase
-      .from("appointments")
-      .update({ status, completed_at: status === "completed" ? new Date().toISOString() : null })
-      .eq("id", id);
-    loadData();
-  }
-
   async function removeSubcontractor(assignmentId: string) {
     if (!confirm("Subunternehmer wirklich entfernen?")) return;
     await supabase.from("project_subcontractors").delete().eq("id", assignmentId);
@@ -592,9 +584,9 @@ export function WorkfolderDetail({ project }: Props) {
           >
             <tab.icon className="w-4 h-4 inline mr-1.5" />
             {tab.label}
-            {tab.count !== undefined && tab.count > 0 && (
+            {"count" in tab && (tab as { count?: number }).count !== undefined && (tab as { count?: number }).count! > 0 && (
               <span className="ml-1.5 px-1.5 py-0.5 text-xs bg-neutral-800 rounded">
-                {tab.count}
+                {(tab as { count?: number }).count}
               </span>
             )}
           </button>

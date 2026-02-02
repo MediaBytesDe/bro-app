@@ -24,6 +24,9 @@ import {
 import { formatDate } from "@/lib/utils";
 import type { Subcontractor, Project, Appointment, TradeType } from "@/types/database";
 
+// Partial type for project dropdown
+type ProjectOption = Pick<Project, "id" | "name" | "slug" | "icon">;
+
 const tradeLabels: Record<TradeType, string> = {
   elektriker: "⚡ Elektriker",
   dachdecker: "🏠 Dachdecker",
@@ -59,8 +62,8 @@ interface Props {
 export default function SubcontractorDetailPage({ params }: Props) {
   const { id } = use(params);
   const [subcontractor, setSubcontractor] = useState<Subcontractor | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [assignedProjects, setAssignedProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [assignedProjects, setAssignedProjects] = useState<ProjectOption[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -73,7 +76,7 @@ export default function SubcontractorDetailPage({ params }: Props) {
     contact_email: "",
     contact_phone: "",
     street: "",
-    zip: "",
+    postal_code: "",
     city: "",
     tax_id: "",
     hourly_rate: "",
@@ -109,7 +112,7 @@ export default function SubcontractorDetailPage({ params }: Props) {
         contact_email: sub.contact_email || "",
         contact_phone: sub.contact_phone || "",
         street: sub.street || "",
-        zip: sub.zip || "",
+        postal_code: sub.postal_code || "",
         city: sub.city || "",
         tax_id: sub.tax_id || "",
         hourly_rate: sub.hourly_rate?.toString() || "",
@@ -145,7 +148,7 @@ export default function SubcontractorDetailPage({ params }: Props) {
     // Load all projects for assignment
     const { data: allProjects } = await supabase
       .from("projects")
-      .select("id, name, slug")
+      .select("id, name, slug, icon")
       .order("name");
 
     setProjects(allProjects || []);
@@ -165,7 +168,7 @@ export default function SubcontractorDetailPage({ params }: Props) {
         contact_email: editForm.contact_email || null,
         contact_phone: editForm.contact_phone || null,
         street: editForm.street || null,
-        zip: editForm.zip || null,
+        postal_code: editForm.postal_code || null,
         city: editForm.city || null,
         tax_id: editForm.tax_id || null,
         hourly_rate: editForm.hourly_rate ? parseFloat(editForm.hourly_rate) : null,
@@ -175,7 +178,12 @@ export default function SubcontractorDetailPage({ params }: Props) {
       })
       .eq("id", id);
 
-    setSubcontractor((prev) => (prev ? { ...prev, ...editForm } : null));
+    setSubcontractor((prev) => (prev ? { 
+      ...prev, 
+      ...editForm,
+      hourly_rate: editForm.hourly_rate ? parseFloat(editForm.hourly_rate) : null,
+      rating: editForm.rating ? parseFloat(editForm.rating) : null,
+    } : null));
     setShowEdit(false);
     setSaving(false);
   }
@@ -251,8 +259,8 @@ export default function SubcontractorDetailPage({ params }: Props) {
           Zurück zur Liste
         </button>
         <div className="flex items-center gap-3">
-          <span className={`badge ${statusColors[subcontractor.status]}`}>
-            {statusLabels[subcontractor.status]}
+          <span className={`badge ${statusColors[subcontractor.status || "active"]}`}>
+            {statusLabels[subcontractor.status || "active"]}
           </span>
           {subcontractor.rating && (
             <span className="flex items-center gap-1 text-yellow-400">
@@ -329,7 +337,7 @@ export default function SubcontractorDetailPage({ params }: Props) {
                 <div>
                   {subcontractor.street && <div>{subcontractor.street}</div>}
                   <div>
-                    {subcontractor.zip && `${subcontractor.zip} `}
+                    {subcontractor.postal_code && `${subcontractor.postal_code} `}
                     {subcontractor.city}
                   </div>
                 </div>
@@ -429,8 +437,7 @@ export default function SubcontractorDetailPage({ params }: Props) {
                 <div className="flex-1">
                   <span className="font-medium text-white">{appt.title}</span>
                   <p className="text-sm text-neutral-500">
-                    {formatDate(appt.scheduled_date)}
-                    {appt.scheduled_time && ` um ${appt.scheduled_time}`}
+                    {formatDate(appt.start_time)}
                   </p>
                 </div>
                 <span

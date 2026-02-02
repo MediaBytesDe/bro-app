@@ -113,12 +113,12 @@ export function ProjectDetail({ project }: Props) {
     setForm({
       title: task.title,
       description: task.description || "",
-      status: task.status,
-      priority: task.priority,
-      category_id: task.category_id,
-      skill: task.skill,
+      status: task.status || "open",
+      priority: task.priority || "medium",
+      category_id: task.category_id || "",
+      skill: task.skill || "",
       due_date: task.due_date ? task.due_date.slice(0, 16) : "",
-      type: task.type,
+      type: task.type || "task",
     });
     setShowForm(true);
   }
@@ -294,11 +294,11 @@ export function ProjectDetail({ project }: Props) {
                     <button onClick={(e) => { e.stopPropagation(); toggleStatus(task); }} className="checkbox" />
                     <div className="flex-1 min-w-0">
                       <h4 className="text-sm font-medium text-white truncate">
-                        {priorityIcons[task.priority] && <span className="mr-1">{priorityIcons[task.priority]}</span>}
+                        {priorityIcons[task.priority || "medium"] && <span className="mr-1">{priorityIcons[task.priority || "medium"]}</span>}
                         {task.title}
                       </h4>
                       <div className="flex items-center gap-2 mt-0.5">
-                        {task.category && <span className="text-[10px] text-neutral-500">{task.category.name}</span>}
+                        {task.category_id && <span className="text-[10px] text-neutral-500">{task.category_id}</span>}
                         {task.run_requested_at && <span className="text-[10px] text-orange-400">⏳ Queued</span>}
                       </div>
                     </div>
@@ -341,7 +341,7 @@ export function ProjectDetail({ project }: Props) {
                     <button onClick={(e) => { e.stopPropagation(); toggleStatus(task); }} className="checkbox border-blue-400" />
                     <div className="flex-1 min-w-0">
                       <h4 className="text-sm font-medium text-white truncate">{task.title}</h4>
-                      {task.category && <span className="text-[10px] text-neutral-500">{task.category.name}</span>}
+                      {task.category_id && <span className="text-[10px] text-neutral-500">{task.category_id}</span>}
                     </div>
                   </div>
                 </div>
@@ -435,7 +435,7 @@ export function ProjectDetail({ project }: Props) {
             <div className="form-group">
               <label className="form-label">Status</label>
               <select
-                value={form.status}
+                value={form.status || "open"}
                 onChange={(e) => setForm({ ...form, status: e.target.value as Task["status"] })}
                 className="input"
               >

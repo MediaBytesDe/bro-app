@@ -169,8 +169,8 @@ export default function QuoteDetailPage({ params }: Props) {
           Zurück zur Liste
         </button>
         <div className="flex items-center gap-3">
-          <span className={`badge ${statusColors[quote.status]}`}>
-            {statusLabels[quote.status]}
+          <span className={`badge ${statusColors[quote.status || "draft"]}`}>
+            {statusLabels[quote.status || "draft"]}
           </span>
           {isExpired && quote.status !== "accepted" && quote.status !== "rejected" && (
             <span className="badge badge-error">Abgelaufen</span>
@@ -251,10 +251,10 @@ export default function QuoteDetailPage({ params }: Props) {
           </div>
         </div>
 
-        {/* Introduction */}
-        {quote.introduction && (
+        {/* Description */}
+        {quote.description && (
           <div className="mb-6">
-            <p className="text-neutral-300">{quote.introduction}</p>
+            <p className="text-neutral-300">{quote.description}</p>
           </div>
         )}
 
@@ -296,41 +296,31 @@ export default function QuoteDetailPage({ params }: Props) {
             <div className="flex justify-between text-neutral-400">
               <span>Netto</span>
               <span className="text-white">
-                {quote.total_net?.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}
+                {quote.net_amount?.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}
               </span>
             </div>
             <div className="flex justify-between text-neutral-400">
               <span>MwSt. ({quote.tax_rate || 19}%)</span>
               <span className="text-white">
-                {quote.total_tax?.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}
+                {quote.tax_amount?.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}
               </span>
             </div>
             <div className="flex justify-between text-lg font-bold pt-2 border-t border-[#262626]">
               <span className="text-white">Brutto</span>
               <span className="text-green-400">
-                {quote.total_gross?.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}
+                {quote.gross_amount?.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Payment Terms */}
-        {quote.payment_terms && (
+        {/* Customer Notes */}
+        {quote.customer_notes && (
           <div className="mt-6 pt-6 border-t border-[#262626]">
             <h3 className="font-medium text-neutral-400 text-sm uppercase tracking-wide mb-2">
-              Zahlungsbedingungen
+              Hinweise für den Kunden
             </h3>
-            <p className="text-neutral-300">{quote.payment_terms}</p>
-          </div>
-        )}
-
-        {/* Notes */}
-        {quote.notes && (
-          <div className="mt-6 pt-6 border-t border-[#262626]">
-            <h3 className="font-medium text-neutral-400 text-sm uppercase tracking-wide mb-2">
-              Interne Notizen
-            </h3>
-            <p className="text-neutral-300 whitespace-pre-wrap">{quote.notes}</p>
+            <p className="text-neutral-300 whitespace-pre-wrap">{quote.customer_notes}</p>
           </div>
         )}
       </div>

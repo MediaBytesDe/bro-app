@@ -260,7 +260,7 @@ export default function FormsPage() {
                 <div className="flex items-center gap-2">
                   <h3 className="font-medium text-white">{template.name}</h3>
                   {template.requires_signature && (
-                    <PenTool className="w-4 h-4 text-orange-400" title="Unterschrift erforderlich" />
+                    <span title="Unterschrift erforderlich"><PenTool className="w-4 h-4 text-orange-400" /></span>
                   )}
                 </div>
                 {template.description && (

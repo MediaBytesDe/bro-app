@@ -271,7 +271,7 @@ Web: www.sofort.solar`;
           Zurück zur Liste
         </button>
         <div className="flex items-center gap-3">
-          <span className={`badge ${statusColors[lead.status]}`}>{statusLabels[lead.status]}</span>
+          <span className={`badge ${statusColors[lead.status || "new"]}`}>{statusLabels[lead.status || "new"]}</span>
           <span className="text-green-400 font-bold text-lg">{formatValue(lead.value) || "-"}</span>
           {lead.status !== "lost" && !lead.customer_id && (
             <button onClick={openConvertModal} className="btn btn-primary">
@@ -326,7 +326,7 @@ Web: www.sofort.solar`;
             <div>
               <label className="form-label">Status</label>
               <select
-                value={lead.status}
+                value={lead.status || "new"}
                 onChange={(e) => setLead({ ...lead, status: e.target.value as Lead["status"] })}
                 className="input"
               >

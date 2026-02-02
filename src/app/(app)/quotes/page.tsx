@@ -134,7 +134,7 @@ export default function QuotesPage() {
     accepted: quotes.filter((q) => q.status === "accepted").length,
     totalValue: quotes
       .filter((q) => q.status === "accepted")
-      .reduce((sum, q) => sum + (q.total_gross || 0), 0),
+      .reduce((sum, q) => sum + (q.gross_amount || 0), 0),
   };
 
   function addLineItem() {
@@ -230,9 +230,9 @@ export default function QuotesPage() {
             unit_price: item.unit_price,
             total_price: item.quantity * item.unit_price,
           })),
-        total_net: netTotal,
-        total_tax: taxAmount,
-        total_gross: grossTotal,
+        net_amount: netTotal,
+        tax_amount: taxAmount,
+        gross_amount: grossTotal,
         tax_rate: 19,
         introduction: form.introduction || null,
         payment_terms: form.payment_terms || null,
@@ -343,9 +343,9 @@ export default function QuotesPage() {
               className="list-item cursor-pointer group"
             >
               {/* Status */}
-              <span className={`badge ${statusColors[quote.status]} shrink-0 flex items-center gap-1`}>
-                {statusIcons[quote.status]}
-                {statusLabels[quote.status]}
+              <span className={`badge ${statusColors[quote.status || "draft"]} shrink-0 flex items-center gap-1`}>
+                {statusIcons[quote.status || "draft"]}
+                {statusLabels[quote.status || "draft"]}
               </span>
 
               {/* Content */}
@@ -373,9 +373,9 @@ export default function QuotesPage() {
               </div>
 
               {/* Amount */}
-              {quote.total_gross && (
+              {quote.gross_amount && (
                 <span className="text-green-400 font-bold shrink-0">
-                  {quote.total_gross.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}
+                  {quote.gross_amount.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}
                 </span>
               )}
 

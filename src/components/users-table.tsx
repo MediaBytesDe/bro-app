@@ -48,8 +48,8 @@ export function UsersTable() {
       username: user.username,
       display_name: user.display_name || "",
       email: user.email || "",
-      role: user.role,
-      active: user.active,
+      role: user.role || "mitarbeiter",
+      active: user.active ?? true,
     });
     setShowForm(true);
   }
@@ -106,8 +106,8 @@ export function UsersTable() {
                   <h3 className="font-medium text-white">{user.display_name || user.username}</h3>
                   <div className="flex items-center gap-2 text-xs text-neutral-500">
                     <span>@{user.username}</span>
-                    <span className={`px-1.5 py-0.5 rounded ${roleColors[user.role]} bg-white/5`}>
-                      {roleLabels[user.role]}
+                    <span className={`px-1.5 py-0.5 rounded ${roleColors[user.role || "mitarbeiter"]} bg-white/5`}>
+                      {roleLabels[user.role || "mitarbeiter"]}
                     </span>
                     {!user.active && <span className="text-red-400">Inaktiv</span>}
                   </div>
@@ -179,7 +179,7 @@ export function UsersTable() {
             <div className="form-group">
               <label className="form-label">Rolle</label>
               <select
-                value={form.role}
+                value={form.role || "mitarbeiter"}
                 onChange={(e) => setForm({ ...form, role: e.target.value as User["role"] })}
                 className="input"
               >

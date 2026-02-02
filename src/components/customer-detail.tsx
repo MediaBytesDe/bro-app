@@ -201,8 +201,8 @@ export function CustomerDetail({ customerId }: Props) {
           Zurück zur Liste
         </button>
         <div className="flex items-center gap-3">
-          <span className={`badge ${statusColors[customer.status]}`}>
-            {statusLabels[customer.status]}
+          <span className={`badge ${statusColors[customer.status || "lead"]}`}>
+            {statusLabels[customer.status || "lead"]}
           </span>
           {customer.customer_number && (
             <span className="text-neutral-500 text-sm">#{customer.customer_number}</span>
@@ -272,7 +272,7 @@ export function CustomerDetail({ customerId }: Props) {
                 <div>
                   {customer.street && <div>{customer.street}</div>}
                   <div>
-                    {customer.zip && `${customer.zip} `}
+                    {customer.postal_code && `${customer.postal_code} `}
                     {customer.city}
                   </div>
                   {customer.country && customer.country !== "Deutschland" && (
@@ -328,7 +328,7 @@ export function CustomerDetail({ customerId }: Props) {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-green-400 font-medium">
-                    {quote.total_gross?.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}
+                    {quote.gross_amount?.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}
                   </span>
                   <ExternalLink className="w-4 h-4 text-neutral-500" />
                 </div>

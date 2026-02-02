@@ -22,6 +22,7 @@ import type { Appointment, AppointmentType, AppointmentStatus, Customer, Project
 // Partial types for dropdown selections
 type CustomerOption = Pick<Customer, "id" | "company_name" | "first_name" | "last_name">;
 type ProjectOption = Pick<Project, "id" | "name" | "icon" | "slug">;
+type SubcontractorOption = Pick<Subcontractor, "id" | "company_name" | "trade">;
 
 const typeLabels: Record<AppointmentType, string> = {
   aufmass: "Aufmaß",
@@ -62,7 +63,7 @@ export default function CalendarPage() {
   const [appointments, setAppointments] = useState<AppointmentWithRelations[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
+  const [subcontractors, setSubcontractors] = useState<SubcontractorOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showForm, setShowForm] = useState(false);
@@ -335,8 +336,8 @@ export default function CalendarPage() {
                           )}
                         </div>
                       </div>
-                      <span className={`badge ${statusColors[apt.status]}`}>
-                        {statusLabels[apt.status]}
+                      <span className={`badge ${statusColors[apt.status || "scheduled"]}`}>
+                        {statusLabels[apt.status || "scheduled"]}
                       </span>
                     </div>
                   ))
