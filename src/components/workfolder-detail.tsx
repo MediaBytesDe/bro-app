@@ -104,7 +104,7 @@ export function WorkfolderDetail({ project }: Props) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [allSubcontractors, setAllSubcontractors] = useState<Subcontractor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "appointments" | "subcontractors" | "documents" | "gallery">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "appointments" | "subcontractors" | "documents" | "gallery" | "forms">("overview");
   const [currentStatus, setCurrentStatus] = useState<string | null>(project.workfolder_status);
   const [statusOptions, setStatusOptions] = useState<WorkfolderStatusDef[]>([]);
   
@@ -126,7 +126,15 @@ export function WorkfolderDetail({ project }: Props) {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(project.customer_id || "");
   const [customerSearch, setCustomerSearch] = useState("");
 
-  // Forms
+  // Form templates & submissions
+  const [formTemplates, setFormTemplates] = useState<any[]>([]);
+  const [formSubmissions, setFormSubmissions] = useState<any[]>([]);
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
+  const [formData, setFormData] = useState<Record<string, any>>({});
+  const [viewingSubmission, setViewingSubmission] = useState<any | null>(null);
+
+  // Appointment Forms
   const [appointmentForm, setAppointmentForm] = useState({
     title: "",
     appointment_type: "aufmass" as AppointmentType,
@@ -202,6 +210,28 @@ export function WorkfolderDetail({ project }: Props) {
       .eq("status", "active")
       .order("company_name");
     setAllSubcontractors(allSubs || []);
+
+    // Load form templates (filtered by brand if parent exists)
+    const templatesQuery = supabase
+      .from("form_templates")
+      .select("*")
+      .or("is_active.is.null,is_active.eq.true")
+      .order("name");
+    const { data: templates } = await templatesQuery;
+    // Filter by brand_ids if applicable
+    const filteredTemplates = (templates || []).filter(t => {
+      if (!t.brand_ids || t.brand_ids.length === 0) return true;
+      return project.parent_id && t.brand_ids.includes(project.parent_id);
+    });
+    setFormTemplates(filteredTemplates);
+
+    // Load form submissions for this project
+    const { data: submissions } = await supabase
+      .from("form_submissions")
+      .select("*, form_template:form_templates(name)")
+      .eq("project_id", project.id)
+      .order("created_at", { ascending: false });
+    setFormSubmissions(submissions || []);
 
     setLoading(false);
   }
@@ -374,6 +404,49 @@ export function WorkfolderDetail({ project }: Props) {
     loadData();
   }
 
+  // Form functions
+  function openFormFill(template: any) {
+    setSelectedTemplate(template);
+    setFormData({});
+    setShowFormModal(true);
+  }
+
+  async function submitForm(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedTemplate) return;
+    
+    setSaving(true);
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    const { error } = await supabase.from("form_submissions").insert({
+      form_template_id: selectedTemplate.id,
+      project_id: project.id,
+      customer_id: project.customer_id,
+      submitted_by: user?.id,
+      data: formData,
+      status: "submitted",
+    });
+
+    setSaving(false);
+
+    if (error) {
+      alert("Fehler: " + error.message);
+      return;
+    }
+
+    setShowFormModal(false);
+    setSelectedTemplate(null);
+    setFormData({});
+    loadData();
+  }
+
+  async function deleteSubmission(id: string) {
+    if (!confirm("Ausgefülltes Formular wirklich löschen?")) return;
+    await supabase.from("form_submissions").delete().eq("id", id);
+    loadData();
+  }
+
   async function uploadDocument(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
@@ -454,6 +527,7 @@ export function WorkfolderDetail({ project }: Props) {
     { id: "subcontractors", label: "Subunternehmer", icon: Users, count: assignedSubs.length },
     { id: "documents", label: "Dokumente", icon: FileText, count: documents.length },
     { id: "gallery", label: "Galerie", icon: ImageIcon },
+    { id: "forms", label: "Formulare", icon: ClipboardList, count: formSubmissions.length },
   ] as const;
 
   return (
@@ -971,6 +1045,85 @@ export function WorkfolderDetail({ project }: Props) {
             </div>
           );
         })()}
+
+        {/* Forms Tab */}
+        {activeTab === "forms" && (
+          <div className="space-y-4">
+            {/* Available Form Templates */}
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold">Formulare ausfüllen</h3>
+            </div>
+            
+            {formTemplates.length === 0 ? (
+              <div className="card p-8 text-center text-neutral-500">
+                <ClipboardList className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>Keine Formulare verfügbar</p>
+                <p className="text-sm mt-1">Erstelle zuerst Formulare unter "Formulare"</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {formTemplates.map((template) => (
+                  <button
+                    key={template.id}
+                    onClick={() => openFormFill(template)}
+                    className="card p-4 text-left hover:bg-neutral-800/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <ClipboardList className="w-5 h-5 text-orange-400" />
+                      <span className="font-medium text-white">{template.name}</span>
+                    </div>
+                    {template.description && (
+                      <p className="text-sm text-neutral-500 line-clamp-2">{template.description}</p>
+                    )}
+                    <div className="mt-2 text-xs text-neutral-600">
+                      {template.fields?.length || 0} Felder
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Submitted Forms */}
+            {formSubmissions.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold mb-3">Ausgefüllte Formulare ({formSubmissions.length})</h3>
+                <div className="card divide-y divide-neutral-800">
+                  {formSubmissions.map((submission) => (
+                    <div
+                      key={submission.id}
+                      className="p-4 flex items-center justify-between hover:bg-neutral-800/30 transition-colors"
+                    >
+                      <div>
+                        <h4 className="font-medium text-white">
+                          {submission.form_template?.name || "Formular"}
+                        </h4>
+                        <p className="text-sm text-neutral-500">
+                          Ausgefüllt am {formatDate(submission.created_at)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setViewingSubmission(submission)}
+                          className="btn btn-ghost btn-sm"
+                          title="Ansehen"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => deleteSubmission(submission.id)}
+                          className="btn btn-ghost btn-sm text-red-400"
+                          title="Löschen"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Modal: Appointment */}
@@ -1336,6 +1489,160 @@ export function WorkfolderDetail({ project }: Props) {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Modal: Fill Form */}
+      <Modal
+        open={showFormModal}
+        onClose={() => { setShowFormModal(false); setSelectedTemplate(null); }}
+        title={selectedTemplate?.name || "Formular ausfüllen"}
+        size="lg"
+      >
+        {selectedTemplate && (
+          <form onSubmit={submitForm} className="space-y-4 max-h-[70vh] overflow-y-auto">
+            {selectedTemplate.fields?.map((field: any) => (
+              <div key={field.id}>
+                <label className="label">
+                  {field.label}
+                  {field.required && <span className="text-red-400 ml-1">*</span>}
+                </label>
+                
+                {field.type === "text" && (
+                  <input
+                    type="text"
+                    className="input"
+                    value={formData[field.id] || ""}
+                    onChange={(e) => setFormData({ ...formData, [field.id]: e.target.value })}
+                    placeholder={field.placeholder}
+                    required={field.required}
+                  />
+                )}
+                
+                {field.type === "textarea" && (
+                  <textarea
+                    className="input min-h-[100px]"
+                    value={formData[field.id] || ""}
+                    onChange={(e) => setFormData({ ...formData, [field.id]: e.target.value })}
+                    placeholder={field.placeholder}
+                    required={field.required}
+                  />
+                )}
+                
+                {field.type === "number" && (
+                  <input
+                    type="number"
+                    className="input"
+                    value={formData[field.id] || ""}
+                    onChange={(e) => setFormData({ ...formData, [field.id]: e.target.value })}
+                    placeholder={field.placeholder}
+                    required={field.required}
+                  />
+                )}
+                
+                {field.type === "date" && (
+                  <input
+                    type="date"
+                    className="input"
+                    value={formData[field.id] || ""}
+                    onChange={(e) => setFormData({ ...formData, [field.id]: e.target.value })}
+                    required={field.required}
+                  />
+                )}
+                
+                {field.type === "checkbox" && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData[field.id] || false}
+                      onChange={(e) => setFormData({ ...formData, [field.id]: e.target.checked })}
+                      className="w-4 h-4 rounded"
+                    />
+                    <span className="text-sm text-neutral-300">{field.placeholder || "Ja"}</span>
+                  </label>
+                )}
+
+                {field.type === "toggle" && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData[field.id] || false}
+                      onChange={(e) => setFormData({ ...formData, [field.id]: e.target.checked })}
+                      className="w-4 h-4 rounded"
+                    />
+                    <span className="text-sm text-neutral-300">{formData[field.id] ? "Ja" : "Nein"}</span>
+                  </label>
+                )}
+                
+                {field.type === "select" && (
+                  <select
+                    className="input"
+                    value={formData[field.id] || ""}
+                    onChange={(e) => setFormData({ ...formData, [field.id]: e.target.value })}
+                    required={field.required}
+                  >
+                    <option value="">Bitte wählen...</option>
+                    {field.options?.map((opt: string) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            ))}
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-neutral-800 sticky bottom-0 bg-[#141414] py-3">
+              <button
+                type="button"
+                onClick={() => { setShowFormModal(false); setSelectedTemplate(null); }}
+                className="btn btn-ghost"
+              >
+                Abbrechen
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? <Spinner /> : "Speichern"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Modal: View Submission */}
+      <Modal
+        open={!!viewingSubmission}
+        onClose={() => setViewingSubmission(null)}
+        title={viewingSubmission?.form_template?.name || "Ausgefülltes Formular"}
+        size="lg"
+      >
+        {viewingSubmission && (
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+            <div className="text-sm text-neutral-500 mb-4">
+              Ausgefüllt am {formatDate(viewingSubmission.created_at)}
+            </div>
+            
+            {Object.entries(viewingSubmission.data || {}).map(([fieldId, value]) => {
+              // Find the field label from the template
+              const template = formTemplates.find(t => t.id === viewingSubmission.form_template_id);
+              const field = template?.fields?.find((f: any) => f.id === fieldId);
+              
+              return (
+                <div key={fieldId} className="border-b border-neutral-800 pb-3">
+                  <div className="text-sm text-neutral-400">{field?.label || fieldId}</div>
+                  <div className="text-white mt-1">
+                    {typeof value === "boolean" ? (value ? "Ja" : "Nein") : String(value) || "—"}
+                  </div>
+                </div>
+              );
+            })}
+
+            <div className="flex justify-end pt-4">
+              <button
+                onClick={() => setViewingSubmission(null)}
+                className="btn btn-ghost"
+              >
+                Schließen
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
