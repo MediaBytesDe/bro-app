@@ -11,9 +11,14 @@ import {
   Plus,
   ChevronRight,
   Users,
+  Calendar,
+  FileText,
   Search,
+  ListTodo,
+  CheckCircle,
+  Circle,
 } from "lucide-react";
-import type { Project, Customer, WorkfolderStatusDef } from "@/types/database";
+import type { Project, Customer, Task, WorkfolderStatusDef } from "@/types/database";
 
 // Partial customer type for dropdown selections
 type CustomerOption = Pick<Customer, "id" | "company_name" | "first_name" | "last_name">;
@@ -46,11 +51,13 @@ interface Props {
 export function WorkfolderList({ brand }: Props) {
   const [workfolders, setWorkfolders] = useState<(Project & { customer?: Customer })[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNewWorkfolder, setShowNewWorkfolder] = useState(false);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"projects" | "tasks">("projects");
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -91,7 +98,27 @@ export function WorkfolderList({ brand }: Props) {
       .order("company_name");
     setCustomers(custs || []);
 
+    // Load legacy tasks
+    const { data: legacyTasks } = await supabase
+      .from("tasks")
+      .select("*")
+      .eq("project_id", brand.id)
+      .order("created_at", { ascending: false });
+    setTasks(legacyTasks || []);
+
     setLoading(false);
+  }
+
+  async function toggleTaskStatus(task: Task) {
+    const newStatus = task.status === "done" ? "open" : "done";
+    await supabase
+      .from("tasks")
+      .update({ 
+        status: newStatus,
+        completed_at: newStatus === "done" ? new Date().toISOString() : null
+      })
+      .eq("id", task.id);
+    loadData();
   }
 
   async function createWorkfolder(e: React.FormEvent) {
@@ -159,50 +186,100 @@ export function WorkfolderList({ brand }: Props) {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center gap-2">
-        <button onClick={() => router.push("/")} className="p-2 -ml-2">
-          <ArrowLeft className="w-5 h-5 text-neutral-400" />
-        </button>
-        <h1 className="text-lg font-bold text-white flex-1 truncate">{brand.name}</h1>
-        <button onClick={() => setShowNewWorkfolder(true)} className="btn btn-primary btn-sm">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.push("/projects")}
+            className="btn btn-ghost btn-sm"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <h1 className="text-xl font-bold text-white flex items-center gap-2">
+            <span className="text-2xl">{brandIcons[brand.slug] || "📁"}</span>
+            {brand.name}
+            <span className="text-neutral-500 font-normal text-base ml-2">
+              ({workfolders.length} Projekte)
+            </span>
+          </h1>
+        </div>
+        <button
+          onClick={() => setShowNewWorkfolder(true)}
+          className="btn btn-primary btn-sm"
+        >
           <Plus className="w-4 h-4" />
+          Neues Projekt
         </button>
       </div>
 
-      {/* Status Pills - Horizontal Scroll */}
-      {statuses.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3">
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-neutral-800">
+        <button
+          onClick={() => setActiveTab("projects")}
+          className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2 ${
+            activeTab === "projects"
+              ? "text-orange-400 border-b-2 border-orange-400"
+              : "text-neutral-400 hover:text-white"
+          }`}
+        >
+          <FolderOpen className="w-4 h-4" />
+          Projekte
+          <span className="px-1.5 py-0.5 text-xs bg-neutral-800 rounded">{workfolders.length}</span>
+        </button>
+        {tasks.length > 0 && (
           <button
-            onClick={() => setStatusFilter(null)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap ${
-              !statusFilter ? "bg-orange-500 text-white" : "bg-neutral-800 text-neutral-400"
+            onClick={() => setActiveTab("tasks")}
+            className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2 ${
+              activeTab === "tasks"
+                ? "text-orange-400 border-b-2 border-orange-400"
+                : "text-neutral-400 hover:text-white"
             }`}
           >
-            Alle
+            <ListTodo className="w-4 h-4" />
+            Alte Tasks
+            <span className="px-1.5 py-0.5 text-xs bg-neutral-800 rounded">{tasks.length}</span>
           </button>
-          {statuses.sort((a, b) => a.sort - b.sort).map((status) => (
-            <button
-              key={status.key}
-              onClick={() => setStatusFilter(statusFilter === status.key ? null : status.key)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap ${
-                statusFilter === status.key
-                  ? statusColors[status.color] || "bg-neutral-600 text-white"
-                  : "bg-neutral-800 text-neutral-400"
-              }`}
-            >
-              {status.label}
-            </button>
-          ))}
+        )}
+      </div>
+
+      {/* Status-Filter (nur bei Projekten) */}
+      {activeTab === "projects" && statuses.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => setStatusFilter(null)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+              !statusFilter
+                ? "bg-orange-500 text-white"
+                : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+            }`}
+          >
+            Alle ({workfolders.length})
+          </button>
+          {statuses.sort((a, b) => a.sort - b.sort).map((status) => {
+            const count = workfolders.filter(wf => wf.workfolder_status === status.key).length;
+            return (
+              <button
+                key={status.key}
+                onClick={() => setStatusFilter(statusFilter === status.key ? null : status.key)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                  statusFilter === status.key
+                    ? statusColors[status.color] || "bg-neutral-600 text-white"
+                    : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+                }`}
+              >
+                {status.label} ({count})
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {/* Search */}
-      {workfolders.length > 5 && (
+      {/* Search (nur bei Projekten) */}
+      {activeTab === "projects" && workfolders.length > 0 && (
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
           <input
             type="text"
-            placeholder="Suchen..."
+            placeholder="Projekte durchsuchen..."
             className="input pl-10"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -210,8 +287,55 @@ export function WorkfolderList({ brand }: Props) {
         </div>
       )}
 
-      {/* Workfolders List */}
-      {filtered.length === 0 ? (
+      {/* Tasks Tab */}
+      {activeTab === "tasks" && (
+        <div className="space-y-2">
+          <p className="text-sm text-neutral-500 mb-4">
+            Diese Tasks stammen aus der alten Struktur. Du kannst sie hier abhaken oder löschen.
+          </p>
+          {tasks.map((task) => (
+            <div
+              key={task.id}
+              className={`card p-3 flex items-center gap-3 ${
+                task.status === "done" ? "opacity-60" : ""
+              }`}
+            >
+              <button
+                onClick={() => toggleTaskStatus(task)}
+                className={`flex-shrink-0 ${
+                  task.status === "done" ? "text-green-500" : "text-neutral-500"
+                }`}
+              >
+                {task.status === "done" ? (
+                  <CheckCircle className="w-5 h-5" />
+                ) : (
+                  <Circle className="w-5 h-5" />
+                )}
+              </button>
+              <div className="flex-1 min-w-0">
+                <p className={`font-medium ${task.status === "done" ? "line-through text-neutral-500" : "text-white"}`}>
+                  {task.title}
+                </p>
+                {task.description && (
+                  <p className="text-sm text-neutral-500 truncate">{task.description}</p>
+                )}
+              </div>
+              <span className={`text-xs px-2 py-1 rounded ${
+                task.status === "done" ? "bg-green-500/20 text-green-400" :
+                task.status === "in_progress" ? "bg-blue-500/20 text-blue-400" :
+                "bg-neutral-700 text-neutral-400"
+              }`}>
+                {task.status === "done" ? "Erledigt" : 
+                 task.status === "in_progress" ? "In Arbeit" : "Offen"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Workfolders Grid (nur bei Projekten-Tab) */}
+      {activeTab === "projects" && (
+        filtered.length === 0 ? (
         <div className="card p-8 text-center text-neutral-500">
           <FolderOpen className="w-12 h-12 mx-auto mb-3 opacity-50" />
           {workfolders.length === 0 ? (
@@ -230,34 +354,50 @@ export function WorkfolderList({ brand }: Props) {
           )}
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {filtered.map((wf) => {
             const statusDef = getStatusDef(wf.workfolder_status);
             return (
-              <div
-                key={wf.id}
-                onClick={() => router.push(`/projects/${wf.slug}`)}
-                className="card p-3 flex items-center gap-3 cursor-pointer active:bg-neutral-800/50"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-white truncate">{wf.name}</span>
-                    {statusDef && (
-                      <span className={`px-2 py-0.5 text-[10px] rounded-full shrink-0 ${statusColors[statusDef.color] || "bg-neutral-700 text-neutral-300"}`}>
-                        {statusDef.label}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-neutral-500 mt-0.5 truncate">
-                    {getCustomerName(wf.customer)}
-                  </div>
+            <div
+              key={wf.id}
+              onClick={() => router.push(`/projects/${wf.slug}`)}
+              className="card p-4 hover:border-orange-500/50 cursor-pointer transition-all group"
+            >
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-white group-hover:text-orange-400 transition-colors">
+                    {wf.name}
+                  </h3>
+                  {statusDef && (
+                    <span className={`px-2 py-0.5 text-xs rounded-full ${statusColors[statusDef.color] || "bg-neutral-700 text-neutral-300"}`}>
+                      {statusDef.label}
+                    </span>
+                  )}
                 </div>
-                <ChevronRight className="w-5 h-5 text-neutral-600 shrink-0" />
+                <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-orange-400" />
               </div>
-            );
+
+              {wf.description && (
+                <p className="text-sm text-neutral-400 mb-3 line-clamp-2">
+                  {wf.description}
+                </p>
+              )}
+
+              <div className="flex items-center gap-4 text-xs text-neutral-500">
+                <span className="flex items-center gap-1">
+                  <Users className="w-3 h-3" />
+                  {getCustomerName(wf.customer)}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Calendar className="w-3 h-3" />
+                  {new Date(wf.created_at || "").toLocaleDateString("de-DE")}
+                </span>
+              </div>
+            </div>
+          );
           })}
         </div>
-      )}
+      ))}
 
       {/* Modal: Neues Projekt */}
       <Modal

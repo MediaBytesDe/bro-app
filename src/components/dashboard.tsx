@@ -160,72 +160,110 @@ export function Dashboard() {
 
   return (
     <div className="space-y-4">
-      {/* Stats - Compact on Mobile */}
-      <div className="grid grid-cols-4 gap-2">
-        <div className="card p-3 text-center">
-          <div className="text-xl font-bold text-orange-400">{totalStats.open}</div>
-          <div className="text-[10px] text-neutral-500 mt-0.5">Offen</div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="stat-card">
+          <div className="stat-icon bg-orange-500/20 text-orange-400">
+            <ListTodo className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="stat-value">{totalStats.open}</div>
+            <div className="stat-label">Offene Tasks</div>
+          </div>
         </div>
-        <div className="card p-3 text-center">
-          <div className="text-xl font-bold text-blue-400">{totalStats.inProgress}</div>
-          <div className="text-[10px] text-neutral-500 mt-0.5">In Arbeit</div>
+        <div className="stat-card">
+          <div className="stat-icon bg-blue-500/20 text-blue-400">
+            <Clock className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="stat-value">{totalStats.inProgress}</div>
+            <div className="stat-label">In Arbeit</div>
+          </div>
         </div>
-        <div className="card p-3 text-center">
-          <div className="text-xl font-bold text-green-400">{totalStats.done}</div>
-          <div className="text-[10px] text-neutral-500 mt-0.5">Erledigt</div>
+        <div className="stat-card">
+          <div className="stat-icon bg-green-500/20 text-green-400">
+            <CheckCircle className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="stat-value">{totalStats.done}</div>
+            <div className="stat-label">Erledigt</div>
+          </div>
         </div>
-        <div className="card p-3 text-center">
-          <div className="text-xl font-bold text-purple-400">{totalStats.leads}</div>
-          <div className="text-[10px] text-neutral-500 mt-0.5">Leads</div>
+        <div className="stat-card">
+          <div className="stat-icon bg-purple-500/20 text-purple-400">
+            <Users className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="stat-value">{totalStats.leads}</div>
+            <div className="stat-label">Aktive Leads</div>
+          </div>
         </div>
       </div>
 
-      {/* Marken */}
-      <div className="mt-4">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="font-semibold text-white">Marken</h2>
+      {/* Projects Grid */}
+      <div className="mt-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold text-white">Marken</h2>
           <button onClick={openNew} className="btn btn-primary btn-sm">
             <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Neue Marke</span>
           </button>
         </div>
 
         {loading ? (
-          <div className="text-center py-8"><Spinner /></div>
+          <div className="empty-state py-12">
+            <Spinner />
+          </div>
         ) : projects.length === 0 ? (
-          <div className="text-center py-8 text-neutral-500">Keine Marken</div>
+          <div className="empty-state py-12">
+            <p className="text-neutral-500">Keine Marken vorhanden</p>
+          </div>
         ) : (
-          <div className="space-y-2">
+          <div className="card divide-y divide-neutral-800">
             {projects.map((project) => (
               <div
                 key={project.id}
                 onClick={() => router.push(`/projects/${project.slug}`)}
-                className="card p-3 flex items-center gap-3 cursor-pointer active:bg-neutral-800/50"
+                className="flex items-center justify-between p-4 hover:bg-neutral-800/50 cursor-pointer transition-colors group"
               >
-                {(project as any).logo_url ? (
-                  <img 
-                    src={(project as any).logo_url} 
-                    alt=""
-                    className="w-10 h-10 rounded-lg object-contain bg-white/10 shrink-0"
-                  />
-                ) : (
-                  <div 
-                    className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white shrink-0"
-                    style={{ backgroundColor: project.color || "#f97316" }}
-                  >
-                    {project.name.charAt(0)}
+                <div className="flex items-center gap-4">
+                  {(project as any).logo_url ? (
+                    <img 
+                      src={(project as any).logo_url} 
+                      alt={project.name}
+                      className="w-10 h-10 rounded-lg object-contain bg-white/10"
+                    />
+                  ) : (
+                    <div 
+                      className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white"
+                      style={{ backgroundColor: project.color || "#f97316" }}
+                    >
+                      {project.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="font-semibold text-white group-hover:text-orange-400 transition-colors">
+                      {project.name}
+                    </h3>
+                    {project.description && (
+                      <p className="text-sm text-neutral-500">{project.description}</p>
+                    )}
                   </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-white truncate">{project.name}</div>
-                  <div className="text-xs text-neutral-500">{project.total_tasks} Projekte</div>
                 </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); openEdit(e, project); }}
-                  className="p-2 text-neutral-600 shrink-0"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <ChevronRight className="w-5 h-5 text-neutral-600 shrink-0" />
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <span className="text-lg font-bold text-white">{project.total_tasks}</span>
+                    <span className="text-xs text-neutral-500 block">Projekte</span>
+                  </div>
+                  <button
+                    onClick={(e) => openEdit(e, project)}
+                    className="p-2 rounded-lg text-neutral-600 hover:text-orange-400 hover:bg-orange-400/10 transition-all"
+                    title="Bearbeiten"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <ChevronRight className="w-5 h-5 text-neutral-600 group-hover:text-orange-400 transition-colors" />
+                </div>
               </div>
             ))}
           </div>

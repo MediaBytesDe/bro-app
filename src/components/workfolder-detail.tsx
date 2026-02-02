@@ -645,19 +645,24 @@ export function WorkfolderDetail({ project }: Props) {
       )}
 
       {/* Tabs */}
-      <div className="flex border-b border-neutral-800 overflow-x-auto scrollbar-hide -mx-3 px-3">
+      <div className="flex gap-1 border-b border-neutral-800 overflow-x-auto">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${
+            className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
               activeTab === tab.id
-                ? "text-orange-400 border-orange-400"
-                : "text-neutral-500 border-transparent"
+                ? "text-orange-400 border-b-2 border-orange-400"
+                : "text-neutral-400 hover:text-white"
             }`}
           >
-            <tab.icon className="w-4 h-4" />
-            <span className="hidden sm:inline">{tab.label}</span>
+            <tab.icon className="w-4 h-4 inline mr-1.5" />
+            {tab.label}
+            {"count" in tab && (tab as { count?: number }).count !== undefined && (tab as { count?: number }).count! > 0 && (
+              <span className="ml-1.5 px-1.5 py-0.5 text-xs bg-neutral-800 rounded">
+                {(tab as { count?: number }).count}
+              </span>
+            )}
           </button>
         ))}
       </div>

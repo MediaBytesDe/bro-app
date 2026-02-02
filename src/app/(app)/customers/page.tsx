@@ -12,6 +12,7 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -49,13 +50,13 @@ export default function CustomersPage() {
   }
 
   const filtered = customers.filter(c => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return c.last_name?.toLowerCase().includes(q) ||
-      c.company_name?.toLowerCase().includes(q) ||
-      c.email?.toLowerCase().includes(q) ||
-      c.first_name?.toLowerCase().includes(q) ||
-      c.city?.toLowerCase().includes(q);
+    const matchesSearch = !search || 
+      c.last_name?.toLowerCase().includes(search.toLowerCase()) ||
+      c.company_name?.toLowerCase().includes(search.toLowerCase()) ||
+      c.email?.toLowerCase().includes(search.toLowerCase()) ||
+      c.first_name?.toLowerCase().includes(search.toLowerCase());
+    const matchesStatus = !statusFilter || c.status === statusFilter;
+    return matchesSearch && matchesStatus;
   });
 
   function openNew() {
@@ -184,33 +185,36 @@ export default function CustomersPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-2">
-        <h1 className="text-lg font-bold text-white">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-white flex items-center gap-2">
+          <Building2 className="w-6 h-6 text-orange-400" />
           Kunden
-          <span className="text-neutral-500 font-normal text-sm ml-1">
+          <span className="text-neutral-500 font-normal text-base ml-2">
             ({filtered.length})
           </span>
         </h1>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <button 
             onClick={importFromLexware} 
             disabled={importing}
-            className="btn btn-ghost btn-sm p-2"
+            className="btn btn-ghost btn-sm"
             title="Von Lexware importieren"
           >
             {importing ? <Spinner className="!w-4 !h-4" /> : <CloudDownload className="w-4 h-4" />}
+            <span className="hidden sm:inline">Import</span>
           </button>
           <button 
             onClick={syncAllToLexware}
             disabled={syncing}
-            className="btn btn-ghost btn-sm p-2"
+            className="btn btn-ghost btn-sm"
             title="Alle zu Lexware synchronisieren"
           >
             {syncing ? <Spinner className="!w-4 !h-4" /> : <RefreshCw className="w-4 h-4" />}
+            <span className="hidden sm:inline">Sync</span>
           </button>
           <button onClick={openNew} className="btn btn-primary btn-sm">
             <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Neu</span>
+            Neuer Kunde
           </button>
         </div>
       </div>
@@ -226,16 +230,28 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
-        <input
-          type="text"
-          placeholder="Suchen..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="input pl-10 w-full"
-        />
+      {/* Filters */}
+      <div className="flex gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+          <input
+            type="text"
+            placeholder="Suchen..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input pl-10 w-full"
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="input !w-auto"
+        >
+          <option value="">Alle Status</option>
+          <option value="active">Aktiv</option>
+          <option value="inactive">Inaktiv</option>
+          <option value="blocked">Gesperrt</option>
+        </select>
       </div>
 
       {/* Customer List */}
@@ -253,29 +269,55 @@ export default function CustomersPage() {
           </p>
         </div>
       ) : (
-        <div className="card divide-y divide-[#1a1a1a]">
+        <div className="card divide-y divide-[#1f1f1f]">
           {filtered.map((customer) => (
             <div
               key={customer.id}
               onClick={() => router.push(`/customers/${customer.id}`)}
-              className="p-3 sm:p-4 cursor-pointer active:bg-neutral-800/50 transition-colors"
+              className="list-item cursor-pointer group"
             >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-white truncate">
-                      {customer.company_name || `${customer.first_name || ""} ${customer.last_name}`.trim()}
-                    </span>
-                    {customer.lexware_id && (
-                      <span className="text-[10px] text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded">LX</span>
-                    )}
-                  </div>
-                  <div className="text-sm text-neutral-500 mt-0.5 truncate">
-                    {customer.city || customer.email || customer.phone || "Keine Details"}
-                  </div>
+              {/* Status Badge */}
+              <span className={`badge shrink-0 ${
+                customer.status === "active" ? "badge-success" :
+                customer.status === "inactive" ? "badge-gray" :
+                "badge-error"
+              }`}>
+                {customer.status === "active" ? "Aktiv" :
+                 customer.status === "inactive" ? "Inaktiv" : "Gesperrt"}
+              </span>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-white truncate">
+                    {customer.company_name || `${customer.first_name || ""} ${customer.last_name}`}
+                  </span>
+                  {customer.customer_number && (
+                    <span className="text-xs text-neutral-500">#{customer.customer_number}</span>
+                  )}
+                  {customer.lexware_id && (
+                    <span className="text-xs text-blue-400">Lexware</span>
+                  )}
                 </div>
-                <ChevronRight className="w-5 h-5 text-neutral-600 shrink-0" />
+                <div className="flex items-center gap-4 mt-1 text-sm text-neutral-400">
+                  {customer.email && (
+                    <span className="flex items-center gap-1 truncate max-w-[200px]">
+                      <Mail className="w-3 h-3 shrink-0" />
+                      {customer.email}
+                    </span>
+                  )}
+                  {customer.phone && (
+                    <span className="flex items-center gap-1">
+                      <Phone className="w-3 h-3 shrink-0" />
+                      {customer.phone}
+                    </span>
+                  )}
+                  {customer.city && <span>{customer.city}</span>}
+                </div>
               </div>
+
+              {/* Arrow */}
+              <ChevronRight className="w-5 h-5 text-neutral-600 shrink-0 group-hover:text-white transition-colors" />
             </div>
           ))}
         </div>
