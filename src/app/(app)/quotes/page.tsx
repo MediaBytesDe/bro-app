@@ -22,6 +22,9 @@ import {
 import { formatDate } from "@/lib/utils";
 import type { Quote, QuoteStatus, Customer } from "@/types/database";
 
+// Partial customer type for dropdown selections
+type CustomerOption = Pick<Customer, "id" | "company_name" | "first_name" | "last_name">;
+
 const statusLabels: Record<QuoteStatus, string> = {
   draft: "Entwurf",
   sent: "Gesendet",
@@ -67,7 +70,7 @@ interface LineItem {
 
 export default function QuotesPage() {
   const [quotes, setQuotes] = useState<QuoteWithCustomer[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");

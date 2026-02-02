@@ -19,6 +19,9 @@ import {
 import { formatDate } from "@/lib/utils";
 import type { Appointment, AppointmentType, AppointmentStatus, Customer, Project, Subcontractor } from "@/types/database";
 
+// Partial customer type for dropdown selections
+type CustomerOption = Pick<Customer, "id" | "company_name" | "first_name" | "last_name">;
+
 const typeLabels: Record<AppointmentType, string> = {
   aufmass: "Aufmaß",
   vob_termin: "VOB-Termin",
@@ -56,7 +59,7 @@ interface AppointmentWithRelations extends Appointment {
 
 export default function CalendarPage() {
   const [appointments, setAppointments] = useState<AppointmentWithRelations[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   const [loading, setLoading] = useState(true);

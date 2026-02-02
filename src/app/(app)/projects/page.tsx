@@ -17,6 +17,9 @@ import {
 } from "lucide-react";
 import type { Project, Customer } from "@/types/database";
 
+// Partial customer type for dropdown selections
+type CustomerOption = Pick<Customer, "id" | "company_name" | "first_name" | "last_name">;
+
 // Icons für die Marken
 const brandIcons: Record<string, string> = {
   "sofort-solar": "☀️",
@@ -28,7 +31,7 @@ const brandIcons: Record<string, string> = {
 export default function ProjectsPage() {
   const [brands, setBrands] = useState<Project[]>([]);
   const [workfolders, setWorkfolders] = useState<Project[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [selectedBrand, setSelectedBrand] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [showNewWorkfolder, setShowNewWorkfolder] = useState(false);

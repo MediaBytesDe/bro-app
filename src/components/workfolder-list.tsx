@@ -20,6 +20,9 @@ import {
 } from "lucide-react";
 import type { Project, Customer, Task, WorkfolderStatusDef } from "@/types/database";
 
+// Partial customer type for dropdown selections
+type CustomerOption = Pick<Customer, "id" | "company_name" | "first_name" | "last_name">;
+
 // Icons für die Marken
 const brandIcons: Record<string, string> = {
   "sofort-solar": "☀️",
@@ -47,7 +50,7 @@ interface Props {
 
 export function WorkfolderList({ brand }: Props) {
   const [workfolders, setWorkfolders] = useState<(Project & { customer?: Customer })[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNewWorkfolder, setShowNewWorkfolder] = useState(false);
