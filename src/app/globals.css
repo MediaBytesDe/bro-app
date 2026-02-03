@@ -52,16 +52,24 @@ body {
   border-radius: 12px;
 }
 
-/* Input */
+/* Input - 16px on mobile prevents iOS zoom */
 .input {
   background: var(--bg-input);
   border: 1px solid var(--border-default);
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 10px 12px;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 16px; /* Prevents iOS auto-zoom on focus */
   transition: border-color 0.15s;
   width: 100%;
+  min-height: 44px; /* Touch-friendly */
+}
+@media (min-width: 768px) {
+  .input {
+    font-size: 14px;
+    padding: 8px 12px;
+    min-height: auto;
+  }
 }
 .input:focus {
   outline: none;
@@ -82,20 +90,27 @@ textarea.input {
   min-height: 80px;
 }
 
-/* Button */
+/* Button - Touch-friendly on mobile */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 10px 16px;
   border-radius: 8px;
   font-weight: 500;
-  font-size: 13px;
+  font-size: 14px;
   transition: all 0.15s;
   cursor: pointer;
   border: none;
-  min-height: 36px;
+  min-height: 44px; /* Touch-friendly */
+}
+@media (min-width: 768px) {
+  .btn {
+    padding: 8px 14px;
+    font-size: 13px;
+    min-height: 36px;
+  }
 }
 .btn-primary {
   background: var(--accent-gradient);
