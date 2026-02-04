@@ -10,18 +10,23 @@ export function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const { signIn, loading, user } = useAuth();
+  const { signIn, loading, user, profile, isCustomer } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
   // Handle redirect after login
   useEffect(() => {
-    if (user) {
-      const redirectTo = searchParams.get("redirectTo") || "/";
-      router.push(redirectTo);
+    if (user && profile) {
+      // Customers go to portal, others go to main app
+      if (isCustomer) {
+        router.push("/portal");
+      } else {
+        const redirectTo = searchParams.get("redirectTo") || "/";
+        router.push(redirectTo);
+      }
       router.refresh();
     }
-  }, [user, router, searchParams]);
+  }, [user, profile, isCustomer, router, searchParams]);
 
   // Handle error from URL (e.g., inactive account)
   useEffect(() => {
@@ -53,7 +58,7 @@ export function LoginForm() {
       <div className="w-full max-w-xs">
         {/* Logo */}
         <div className="text-center mb-6">
-          <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white">
+          <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-gradient-to-br from-[#fa432a] to-[#ff6b4a] flex items-center justify-center text-white">
             <Bot className="w-7 h-7" />
           </div>
           <h1 className="text-xl font-bold text-white">Bro Dashboard</h1>

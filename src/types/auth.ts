@@ -80,6 +80,12 @@ export const ROUTE_ACCESS: Record<string, UserRole[]> = {
   "/skills": ["admin", "mitarbeiter"],
   "/openclaw": ["admin"],
   "/settings": ["admin"],
+  // Customer Portal
+  "/portal": ["customer"],
+  "/portal/projekte": ["customer"],
+  "/portal/projekte/[slug]": ["customer"],
+  "/portal/angebote": ["customer"],
+  "/portal/dokumente": ["customer"],
 };
 
 // User-Profil mit Rolle

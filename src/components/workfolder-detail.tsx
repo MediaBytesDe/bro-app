@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Spinner } from "@/components/ui/spinner";
 import { Modal } from "@/components/ui/modal";
@@ -35,6 +35,7 @@ import {
   FileCheck,
   Shield,
   Folder,
+  ListTodo,
   type LucideIcon,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
@@ -96,7 +97,12 @@ interface Props {
   project: Project;
 }
 
+type TabType = "overview" | "appointments" | "subcontractors" | "documents" | "gallery" | "forms" | "quotes" | "tasks";
+
 export function WorkfolderDetail({ project }: Props) {
+  const searchParams = useSearchParams();
+  const initialTab = (searchParams.get("tab") as TabType) || "overview";
+  
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [parentProject, setParentProject] = useState<Project | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -104,7 +110,10 @@ export function WorkfolderDetail({ project }: Props) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [allSubcontractors, setAllSubcontractors] = useState<Subcontractor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "appointments" | "subcontractors" | "documents" | "gallery" | "forms">("overview");
+  const [quotes, setQuotes] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [currentStatus, setCurrentStatus] = useState<string | null>(project.workfolder_status);
   const [statusOptions, setStatusOptions] = useState<WorkfolderStatusDef[]>([]);
   
@@ -119,6 +128,10 @@ export function WorkfolderDetail({ project }: Props) {
   // Lightbox / Document Preview
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
+  
+  // Document delete
+  const [deleteDocTarget, setDeleteDocTarget] = useState<{ id: string; name: string; storagePath: string | null } | null>(null);
+  const [deletingDoc, setDeletingDoc] = useState(false);
   
   // Customer change
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -202,6 +215,31 @@ export function WorkfolderDetail({ project }: Props) {
       .eq("project_id", project.id)
       .order("created_at", { ascending: false });
     setDocuments(docs || []);
+
+    // Load quotes
+    const { data: quotesData } = await supabase
+      .from("wawi_quotes")
+      .select("*")
+      .eq("project_id", project.id)
+      .order("created_at", { ascending: false });
+    setQuotes(quotesData || []);
+
+    // Load tasks
+    const { data: tasksData } = await supabase
+      .from("project_tasks")
+      .select("*, assigned_user:users(id, display_name), assigned_sub:subcontractors(id, company_name)")
+      .eq("project_id", project.id)
+      .order("sort_order")
+      .order("created_at", { ascending: false });
+    setTasks(tasksData || []);
+
+    // Load all users for task assignment
+    const { data: usersData } = await supabase
+      .from("users")
+      .select("id, display_name, username")
+      .eq("active", true)
+      .order("display_name");
+    setAllUsers(usersData || []);
 
     // Load all subcontractors for assignment
     const { data: allSubs } = await supabase
@@ -494,17 +532,23 @@ export function WorkfolderDetail({ project }: Props) {
     }
   }
 
-  async function deleteDocument(docId: string, storagePath: string | null) {
-    if (!confirm("Dokument wirklich löschen?")) return;
+  async function confirmDeleteDocument() {
+    if (!deleteDocTarget) return;
+    setDeletingDoc(true);
     
-    // Delete from storage
-    if (storagePath) {
-      await supabase.storage.from("documents").remove([storagePath]);
+    try {
+      // Delete from storage
+      if (deleteDocTarget.storagePath) {
+        await supabase.storage.from("documents").remove([deleteDocTarget.storagePath]);
+      }
+      
+      // Delete from DB
+      await supabase.from("documents").delete().eq("id", deleteDocTarget.id);
+      loadData();
+    } finally {
+      setDeletingDoc(false);
+      setDeleteDocTarget(null);
     }
-    
-    // Delete from DB
-    await supabase.from("documents").delete().eq("id", docId);
-    loadData();
   }
 
   function getCustomerAddress() {
@@ -523,6 +567,8 @@ export function WorkfolderDetail({ project }: Props) {
 
   const tabs = [
     { id: "overview", label: "Übersicht", icon: FileText },
+    { id: "quotes", label: "Angebote", icon: FileSignature, count: quotes.length },
+    { id: "tasks", label: "Aufgaben", icon: ListTodo, count: tasks.filter(t => t.status !== "done").length },
     { id: "appointments", label: "Termine", icon: Calendar, count: appointments.length },
     { id: "subcontractors", label: "Subunternehmer", icon: Users, count: assignedSubs.length },
     { id: "documents", label: "Dokumente", icon: FileText, count: documents.length },
@@ -672,10 +718,67 @@ export function WorkfolderDetail({ project }: Props) {
         {/* Overview */}
         {activeTab === "overview" && (
           <div className="grid gap-4 md:grid-cols-2">
+            {/* Quote Status */}
+            {quotes.length > 0 && (() => {
+              const firstQuote = quotes[0];
+              const isExported = !!firstQuote.lexware_quotation_id;
+              return (
+              <div 
+                className="card p-4 md:col-span-2 cursor-pointer hover:bg-neutral-800/50 transition-colors"
+                onClick={() => {
+                  if (isExported) {
+                    window.open(`/api/lexware/quote-pdf?lexwareId=${firstQuote.lexware_quotation_id}`, "_blank");
+                  } else {
+                    router.push(`/quotes/${firstQuote.id}`);
+                  }
+                }}
+              >
+                <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
+                  {isExported ? <FileText className="w-4 h-4 text-blue-400" /> : <FileSignature className="w-4 h-4" />}
+                  Angebot
+                  {quotes.length > 1 && (
+                    <span className="text-xs text-neutral-500 font-normal">
+                      (+{quotes.length - 1} weitere)
+                    </span>
+                  )}
+                </h3>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white font-medium hover:text-[#fa432a]">
+                      {firstQuote.package_title || firstQuote.title}
+                    </p>
+                    <p className={`text-xs ${isExported ? "text-blue-400" : "text-neutral-500"}`}>
+                      {firstQuote.lexware_quote_number || firstQuote.quote_number || `#${firstQuote.id.slice(0, 6)}`} · {new Date(firstQuote.quote_date).toLocaleDateString("de-DE")}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className={`text-xs px-2 py-1 rounded ${
+                      firstQuote.status === "accepted" ? "bg-green-500/20 text-green-400" :
+                      firstQuote.status === "rejected" ? "bg-red-500/20 text-red-400" :
+                      firstQuote.status === "draft" ? "bg-neutral-500/20 text-neutral-400" :
+                      "bg-yellow-500/20 text-yellow-400"
+                    }`}>
+                      {firstQuote.status === "draft" ? "Entwurf" :
+                       firstQuote.status === "accepted" ? "Angenommen" :
+                       firstQuote.status === "rejected" ? "Abgelehnt" :
+                       firstQuote.status === "sent" ? "Versendet" : "Offen"}
+                    </span>
+                    <p className="text-lg font-bold text-white mt-1">
+                      {new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(firstQuote.total_amount)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );})()}
+
             {/* Quick Stats */}
             <div className="card p-4">
               <h3 className="font-semibold text-white mb-3">Status</h3>
               <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-neutral-400">Angebote</span>
+                  <span className="text-white">{quotes.length}</span>
+                </div>
                 <div className="flex justify-between">
                   <span className="text-neutral-400">Termine</span>
                   <span className="text-white">{appointments.length}</span>
@@ -714,6 +817,27 @@ export function WorkfolderDetail({ project }: Props) {
               )}
             </div>
           </div>
+        )}
+
+        {/* Quotes */}
+        {activeTab === "quotes" && (
+          <QuotesTab 
+            quotes={quotes} 
+            projectId={project.id}
+            customerId={project.customer_id}
+            onRefresh={loadData}
+          />
+        )}
+
+        {/* Tasks */}
+        {activeTab === "tasks" && (
+          <TasksTab 
+            tasks={tasks}
+            projectId={project.id}
+            users={allUsers}
+            subcontractors={allSubcontractors}
+            onRefresh={loadData}
+          />
         )}
 
         {/* Appointments */}
@@ -906,7 +1030,10 @@ export function WorkfolderDetail({ project }: Props) {
                               </div>
                             </div>
                             <button
-                              onClick={(e) => { e.stopPropagation(); deleteDocument(doc.id, doc.storage_path); }}
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                setDeleteDocTarget({ id: doc.id, name: doc.name, storagePath: doc.storage_path }); 
+                              }}
                               className="btn btn-ghost btn-sm text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
                               title="Löschen"
                             >
@@ -965,7 +1092,10 @@ export function WorkfolderDetail({ project }: Props) {
                         <p className="text-xs text-neutral-400">{formatDate(img.created_at)}</p>
                       </div>
                       <button
-                        onClick={(e) => { e.stopPropagation(); deleteDocument(img.id, img.storage_path); }}
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          setDeleteDocTarget({ id: img.id, name: img.name, storagePath: img.storage_path }); 
+                        }}
                         className="absolute top-2 right-2 p-1.5 bg-red-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700"
                         title="Löschen"
                       >
@@ -1791,6 +1921,466 @@ export function WorkfolderDetail({ project }: Props) {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Delete Document Modal */}
+      <Modal open={!!deleteDocTarget} onClose={() => setDeleteDocTarget(null)} title="Dokument löschen">
+        <div className="space-y-4">
+          <p className="text-neutral-300">
+            Möchtest du das Dokument <span className="font-semibold text-white">"{deleteDocTarget?.name}"</span> wirklich löschen?
+          </p>
+          <p className="text-sm text-neutral-500">
+            Diese Aktion kann nicht rückgängig gemacht werden.
+          </p>
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={() => setDeleteDocTarget(null)}
+              className="flex-1 btn btn-secondary"
+            >
+              Abbrechen
+            </button>
+            <button
+              onClick={confirmDeleteDocument}
+              disabled={deletingDoc}
+              className="flex-1 btn bg-red-500 hover:bg-red-600 text-white"
+            >
+              {deletingDoc ? "Löschen..." : "Löschen"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// Quotes Tab Component
+function QuotesTab({ quotes, projectId, customerId, onRefresh }: {
+  quotes: any[];
+  projectId: string;
+  customerId: string | null;
+  onRefresh: () => void;
+}) {
+  const router = useRouter();
+  const supabase = createClient();
+  const [statusMenuId, setStatusMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!statusMenuId) return;
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setStatusMenuId(null);
+      }
+    }
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [statusMenuId]);
+
+  async function updateStatus(quoteId: string, status: string) {
+    await supabase
+      .from("wawi_quotes")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", quoteId);
+    setStatusMenuId(null);
+    onRefresh();
+  }
+
+  const statusOptions = [
+    { key: "draft", label: "Entwurf", bg: "bg-neutral-500/20", text: "text-neutral-400" },
+    { key: "sent_to_lexware", label: "An Lexware", bg: "bg-blue-500/20", text: "text-blue-400" },
+    { key: "sent", label: "Versendet", bg: "bg-cyan-500/20", text: "text-cyan-400" },
+    { key: "open", label: "Offen", bg: "bg-yellow-500/20", text: "text-yellow-400" },
+    { key: "accepted", label: "Angenommen", bg: "bg-green-500/20", text: "text-green-400" },
+    { key: "rejected", label: "Abgelehnt", bg: "bg-red-500/20", text: "text-red-400" },
+  ];
+
+  const getStatusInfo = (status: string) => statusOptions.find(s => s.key === status) || statusOptions[0];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button
+          onClick={() => router.push(`/quotes/new?project=${projectId}&customer=${customerId}`)}
+          className="btn btn-primary btn-sm"
+        >
+          <Plus className="w-4 h-4" />
+          Neues Angebot
+        </button>
+      </div>
+
+      {quotes.length === 0 ? (
+        <div className="card p-8 text-center text-neutral-500">
+          <FileSignature className="w-12 h-12 mx-auto mb-3 opacity-50" />
+          <p>Noch keine Angebote</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {quotes.map((quote) => {
+            const statusInfo = getStatusInfo(quote.status);
+            const isExported = !!quote.lexware_quotation_id;
+            return (
+              <div 
+                key={quote.id} 
+                className={`card px-4 py-3 transition-colors relative cursor-pointer hover:bg-neutral-800/50 ${statusMenuId === quote.id ? "z-50" : ""}`}
+                onClick={() => {
+                  // If exported to Lexware, open PDF directly
+                  if (isExported) {
+                    window.open(`/api/lexware/quote-pdf?lexwareId=${quote.lexware_quotation_id}`, "_blank");
+                  } else {
+                    router.push(`/quotes/${quote.id}`);
+                  }
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      {isExported && (
+                        <span title="PDF öffnen">
+                          <FileText className="w-3 h-3 text-blue-400" />
+                        </span>
+                      )}
+                      <span className={`text-xs font-mono ${isExported ? "text-blue-400" : "text-neutral-500"}`}>
+                        {quote.lexware_quote_number || quote.quote_number || `#${quote.id.slice(0, 6)}`}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setStatusMenuId(statusMenuId === quote.id ? null : quote.id);
+                        }}
+                        className={`text-[10px] px-1.5 py-0.5 rounded hover:opacity-80 ${statusInfo.bg} ${statusInfo.text}`}
+                      >
+                        {statusInfo.label}
+                      </button>
+                    </div>
+                    <h4 className="text-sm font-medium text-white hover:text-[#fa432a]">
+                      {quote.package_title || quote.title}
+                    </h4>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-bold text-white">
+                      {new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(quote.total_amount)}
+                    </span>
+                    <p className="text-xs text-neutral-500">
+                      {new Date(quote.quote_date).toLocaleDateString("de-DE")}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Status Menu */}
+                {statusMenuId === quote.id && (
+                  <div 
+                    ref={menuRef}
+                    className="absolute left-24 top-2 z-[100] bg-[#1a1a1a] border border-[#333] rounded-lg shadow-xl py-1 min-w-[140px]"
+                  >
+                    {statusOptions.map((opt) => (
+                      <button
+                        key={opt.key}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateStatus(quote.id, opt.key);
+                        }}
+                        className={`w-full px-3 py-1.5 text-left text-xs hover:bg-[#262626] flex items-center gap-2 ${
+                          quote.status === opt.key ? "text-[#fa432a]" : "text-neutral-300"
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${opt.bg}`} />
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Tasks Tab Component
+function TasksTab({ tasks, projectId, users, subcontractors, onRefresh }: {
+  tasks: any[];
+  projectId: string;
+  users: any[];
+  subcontractors: any[];
+  onRefresh: () => void;
+}) {
+  const supabase = createClient();
+  const [showModal, setShowModal] = useState(false);
+  const [editingTask, setEditingTask] = useState<any | null>(null);
+  const [saving, setSaving] = useState(false);
+  
+  // Form state
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [status, setStatus] = useState("open");
+  const [priority, setPriority] = useState("normal");
+  const [dueDate, setDueDate] = useState("");
+  const [assignedUserId, setAssignedUserId] = useState<string>("");
+  const [assignedSubId, setAssignedSubId] = useState<string>("");
+
+  const statusOptions = [
+    { key: "open", label: "Offen", color: "bg-yellow-500/20 text-yellow-400" },
+    { key: "in_progress", label: "In Arbeit", color: "bg-blue-500/20 text-blue-400" },
+    { key: "done", label: "Erledigt", color: "bg-green-500/20 text-green-400" },
+    { key: "cancelled", label: "Abgebrochen", color: "bg-neutral-500/20 text-neutral-400" },
+  ];
+
+  const priorityOptions = [
+    { key: "low", label: "Niedrig", color: "text-neutral-400" },
+    { key: "normal", label: "Normal", color: "text-white" },
+    { key: "high", label: "Hoch", color: "text-orange-400" },
+    { key: "urgent", label: "Dringend", color: "text-red-400" },
+  ];
+
+  function openNew() {
+    setEditingTask(null);
+    setTitle("");
+    setDescription("");
+    setStatus("open");
+    setPriority("normal");
+    setDueDate("");
+    setAssignedUserId("");
+    setAssignedSubId("");
+    setShowModal(true);
+  }
+
+  function openEdit(task: any) {
+    setEditingTask(task);
+    setTitle(task.title);
+    setDescription(task.description || "");
+    setStatus(task.status);
+    setPriority(task.priority);
+    setDueDate(task.due_date || "");
+    setAssignedUserId(task.assigned_user_id || "");
+    setAssignedSubId(task.assigned_subcontractor_id || "");
+    setShowModal(true);
+  }
+
+  async function saveTask() {
+    if (!title.trim()) return;
+    setSaving(true);
+
+    const taskData = {
+      project_id: projectId,
+      title: title.trim(),
+      description: description.trim() || null,
+      status,
+      priority,
+      due_date: dueDate || null,
+      assigned_user_id: assignedUserId || null,
+      assigned_subcontractor_id: assignedSubId || null,
+    };
+
+    let error;
+    if (editingTask) {
+      const result = await supabase
+        .from("project_tasks")
+        .update({ ...taskData, updated_at: new Date().toISOString() })
+        .eq("id", editingTask.id);
+      error = result.error;
+    } else {
+      const result = await supabase.from("project_tasks").insert(taskData);
+      error = result.error;
+    }
+
+    if (error) {
+      console.error("Error saving task:", error);
+      alert(`Fehler: ${error.message}`);
+    }
+
+    setSaving(false);
+    setShowModal(false);
+    onRefresh();
+  }
+
+  async function deleteTask(id: string) {
+    if (!confirm("Aufgabe löschen?")) return;
+    await supabase.from("project_tasks").delete().eq("id", id);
+    onRefresh();
+  }
+
+  async function toggleStatus(task: any) {
+    const newStatus = task.status === "done" ? "open" : "done";
+    await supabase
+      .from("project_tasks")
+      .update({ 
+        status: newStatus, 
+        completed_at: newStatus === "done" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString() 
+      })
+      .eq("id", task.id);
+    onRefresh();
+  }
+
+  const openTasks = tasks.filter(t => t.status !== "done" && t.status !== "cancelled");
+  const doneTasks = tasks.filter(t => t.status === "done");
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={openNew} className="btn btn-primary btn-sm">
+          <Plus className="w-4 h-4" />
+          Neue Aufgabe
+        </button>
+      </div>
+
+      {tasks.length === 0 ? (
+        <div className="card p-8 text-center text-neutral-500">
+          <ListTodo className="w-12 h-12 mx-auto mb-3 opacity-50" />
+          <p>Noch keine Aufgaben</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Open Tasks */}
+          {openTasks.length > 0 && (
+            <div className="space-y-2">
+              {openTasks.map((task) => (
+                <div key={task.id} className="card px-4 py-3 flex items-center gap-3">
+                  <button
+                    onClick={() => toggleStatus(task)}
+                    className="w-5 h-5 rounded border-2 border-neutral-600 hover:border-green-400 flex items-center justify-center transition-colors"
+                  >
+                  </button>
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openEdit(task)}>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm font-medium ${priorityOptions.find(p => p.key === task.priority)?.color}`}>
+                        {task.title}
+                      </span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${statusOptions.find(s => s.key === task.status)?.color}`}>
+                        {statusOptions.find(s => s.key === task.status)?.label}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-neutral-500 mt-0.5">
+                      {task.assigned_user?.display_name && (
+                        <span>👤 {task.assigned_user.display_name}</span>
+                      )}
+                      {task.assigned_sub?.company_name && (
+                        <span>🏢 {task.assigned_sub.company_name}</span>
+                      )}
+                      {task.due_date && (
+                        <span>📅 {new Date(task.due_date).toLocaleDateString("de-DE")}</span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => deleteTask(task.id)}
+                    className="w-6 h-6 flex items-center justify-center text-neutral-600 hover:text-red-400"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Done Tasks */}
+          {doneTasks.length > 0 && (
+            <div>
+              <p className="text-xs text-neutral-500 uppercase tracking-wide mb-2">Erledigt ({doneTasks.length})</p>
+              <div className="space-y-1">
+                {doneTasks.map((task) => (
+                  <div key={task.id} className="card px-4 py-2 flex items-center gap-3 opacity-60">
+                    <button
+                      onClick={() => toggleStatus(task)}
+                      className="w-5 h-5 rounded border-2 border-green-500 bg-green-500/20 flex items-center justify-center"
+                    >
+                      <CheckCircle className="w-3 h-3 text-green-400" />
+                    </button>
+                    <span className="text-sm text-neutral-400 line-through">{task.title}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Task Modal */}
+      <Modal open={showModal} onClose={() => setShowModal(false)} title={editingTask ? "Aufgabe bearbeiten" : "Neue Aufgabe"}>
+        <div className="space-y-4">
+          <div className="form-group">
+            <label className="form-label">Titel *</label>
+            <input
+              type="text"
+              className="input"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Was ist zu tun?"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Beschreibung</label>
+            <textarea
+              className="input"
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Details..."
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="form-label">Status</label>
+              <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
+                {statusOptions.map(s => (
+                  <option key={s.key} value={s.key}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Priorität</label>
+              <select className="input" value={priority} onChange={(e) => setPriority(e.target.value)}>
+                {priorityOptions.map(p => (
+                  <option key={p.key} value={p.key}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Fällig am</label>
+            <input
+              type="date"
+              className="input"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="form-label">Benutzer</label>
+              <select className="input" value={assignedUserId} onChange={(e) => setAssignedUserId(e.target.value)}>
+                <option value="">Nicht zugewiesen</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>{u.display_name || u.username}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Subunternehmer</label>
+              <select className="input" value={assignedSubId} onChange={(e) => setAssignedSubId(e.target.value)}>
+                <option value="">Nicht zugewiesen</option>
+                {subcontractors.map(s => (
+                  <option key={s.id} value={s.id}>{s.company_name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={() => setShowModal(false)} className="btn btn-ghost">
+              Abbrechen
+            </button>
+            <button onClick={saveTask} disabled={saving || !title.trim()} className="btn btn-primary">
+              {saving ? "Speichern..." : "Speichern"}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

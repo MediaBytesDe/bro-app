@@ -99,8 +99,11 @@ export async function updateSession(request: NextRequest) {
     // Redirect to appropriate page based on role
     const url = request.nextUrl.clone();
     
-    // Subcontractors and customers go to projects
-    if (role === "subcontractor" || role === "customer") {
+    // Customers go to portal
+    if (role === "customer") {
+      url.pathname = "/portal";
+    } else if (role === "subcontractor") {
+      // Subcontractors go to projects
       url.pathname = "/projects";
     } else {
       // Others go to home

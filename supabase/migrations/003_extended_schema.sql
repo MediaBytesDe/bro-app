@@ -92,7 +92,7 @@ END $$;
 -- 1. CUSTOMERS - Kunden (aus Leads konvertiert)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS customers (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Referenz zum ursprünglichen Lead
     lead_id UUID REFERENCES leads(id) ON DELETE SET NULL,
@@ -154,7 +154,7 @@ CREATE INDEX IF NOT EXISTS idx_customers_postal_code ON customers(postal_code);
 -- 2. QUOTES - Angebote
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS quotes (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Referenzen
     customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -218,7 +218,7 @@ CREATE INDEX IF NOT EXISTS idx_quotes_created_at ON quotes(created_at DESC);
 -- 3. SUBCONTRACTORS - Subunternehmer
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS subcontractors (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Basis-Daten
     company_name VARCHAR(255) NOT NULL,
@@ -280,7 +280,7 @@ CREATE INDEX IF NOT EXISTS idx_subcontractors_rating ON subcontractors(rating DE
 -- 4. PROJECT_SUBCONTRACTORS - Zuordnung Projekt ↔ Subunternehmer
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS project_subcontractors (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     subcontractor_id UUID NOT NULL REFERENCES subcontractors(id) ON DELETE CASCADE,
@@ -322,7 +322,7 @@ CREATE INDEX IF NOT EXISTS idx_project_subcontractors_status ON project_subcontr
 -- 5. APPOINTMENTS - Termine
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS appointments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Referenzen
     project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
@@ -381,7 +381,7 @@ CREATE INDEX IF NOT EXISTS idx_appointments_assigned_to ON appointments USING GI
 -- 6. REPORTS - Rapporte/Baustellendokumentation
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS reports (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Referenzen
     project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -442,7 +442,7 @@ CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
 -- 7. DOCUMENTS - Dokumente
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS documents (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Referenzen (polymorphe Verknüpfung)
     project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
@@ -500,7 +500,7 @@ CREATE INDEX IF NOT EXISTS idx_documents_onedrive_item_id ON documents(onedrive_
 -- 8. FORM_TEMPLATES - Formularvorlagen
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS form_templates (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Basis
     name VARCHAR(255) NOT NULL,
@@ -548,7 +548,7 @@ CREATE INDEX IF NOT EXISTS idx_form_templates_active ON form_templates(active);
 -- 9. FORM_SUBMISSIONS - Ausgefüllte Formulare
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS form_submissions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Referenzen
     template_id UUID NOT NULL REFERENCES form_templates(id) ON DELETE CASCADE,
@@ -713,12 +713,12 @@ CREATE POLICY "Customers can read own data"
     USING (
         EXISTS (
             SELECT 1 FROM users 
-            WHERE users.auth_id = auth.uid()::TEXT 
+            WHERE users.auth_id::uuid = auth.uid() 
             AND users.role::TEXT = 'customer'
             AND customers.id = (
                 SELECT c.id FROM customers c 
                 JOIN users u ON u.email = c.email 
-                WHERE u.auth_id = auth.uid()::TEXT
+                WHERE u.auth_id::uuid = auth.uid()
             )
         )
     );
@@ -740,7 +740,7 @@ CREATE POLICY "Customers can read own quotes"
         EXISTS (
             SELECT 1 FROM customers c
             JOIN users u ON u.email = c.email
-            WHERE u.auth_id = auth.uid()::TEXT
+            WHERE u.auth_id::uuid = auth.uid()
             AND c.id = quotes.customer_id
         )
     );
@@ -805,7 +805,7 @@ CREATE POLICY "Customers can read own appointments"
         EXISTS (
             SELECT 1 FROM customers c
             JOIN users u ON u.email = c.email
-            WHERE u.auth_id = auth.uid()::TEXT
+            WHERE u.auth_id::uuid = auth.uid()
             AND c.id = appointments.customer_id
         )
     );
@@ -861,7 +861,7 @@ CREATE POLICY "Customers can read own documents"
         EXISTS (
             SELECT 1 FROM customers c
             JOIN users u ON u.email = c.email
-            WHERE u.auth_id = auth.uid()::TEXT
+            WHERE u.auth_id::uuid = auth.uid()
             AND c.id = documents.customer_id
         )
     );
@@ -899,7 +899,7 @@ CREATE POLICY "Customers can read own submissions"
         EXISTS (
             SELECT 1 FROM customers c
             JOIN users u ON u.email = c.email
-            WHERE u.auth_id = auth.uid()::TEXT
+            WHERE u.auth_id::uuid = auth.uid()
             AND c.id = form_submissions.customer_id
         )
     );

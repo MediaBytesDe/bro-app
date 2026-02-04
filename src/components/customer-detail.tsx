@@ -17,6 +17,11 @@ import {
   Pencil,
   Plus,
   ExternalLink,
+  Key,
+  Copy,
+  Check,
+  UserPlus,
+  UserX,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import type { Customer, Quote, Project } from "@/types/database";
@@ -45,6 +50,14 @@ export function CustomerDetail({ customerId }: Props) {
   const [saving, setSaving] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  
+  // Login management
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [creatingLogin, setCreatingLogin] = useState(false);
+  const [deletingLogin, setDeletingLogin] = useState(false);
+  const [newLoginData, setNewLoginData] = useState<{ email: string; password: string } | null>(null);
+  const [copiedPassword, setCopiedPassword] = useState(false);
+  const [showDeleteLoginModal, setShowDeleteLoginModal] = useState(false);
   const [editForm, setEditForm] = useState({
     company_name: "",
     first_name: "",
@@ -169,6 +182,77 @@ export function CustomerDetail({ customerId }: Props) {
     }
   }
 
+  async function createLogin() {
+    setCreatingLogin(true);
+    try {
+      const res = await fetch(`/api/customers/${customerId}/create-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      
+      const data = await res.json();
+      
+      if (data.success) {
+        setNewLoginData({ email: data.email, password: data.password });
+        await loadCustomer();
+      } else {
+        alert(`❌ Fehler: ${data.error}`);
+        setShowLoginModal(false);
+      }
+    } catch (err) {
+      alert(`❌ Fehler: ${err instanceof Error ? err.message : "Unbekannter Fehler"}`);
+      setShowLoginModal(false);
+    } finally {
+      setCreatingLogin(false);
+    }
+  }
+
+  async function deleteLogin() {
+    setDeletingLogin(true);
+    try {
+      const res = await fetch(`/api/customers/${customerId}/delete-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      
+      const data = await res.json();
+      
+      if (data.success) {
+        await loadCustomer();
+        setShowDeleteLoginModal(false);
+      } else {
+        alert(`❌ Fehler: ${data.error}`);
+      }
+    } catch (err) {
+      alert(`❌ Fehler: ${err instanceof Error ? err.message : "Unbekannter Fehler"}`);
+    } finally {
+      setDeletingLogin(false);
+    }
+  }
+
+  async function copyPassword() {
+    if (!newLoginData?.password) return;
+    
+    try {
+      await navigator.clipboard.writeText(newLoginData.password);
+      setCopiedPassword(true);
+      setTimeout(() => setCopiedPassword(false), 2000);
+    } catch (err) {
+      // Fallback for HTTP or older browsers
+      const textArea = document.createElement("textarea");
+      textArea.value = newLoginData.password;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-999999px";
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      setCopiedPassword(true);
+      setTimeout(() => setCopiedPassword(false), 2000);
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-8 text-center">
@@ -284,6 +368,50 @@ export function CustomerDetail({ customerId }: Props) {
               <p className="text-neutral-500">Keine Adresse hinterlegt</p>
             )}
           </div>
+        </div>
+
+        {/* Kundenportal Login */}
+        <div className="mt-6 pt-6 border-t border-[#262626]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h3 className="font-medium text-neutral-400 text-sm uppercase tracking-wide flex items-center gap-2">
+              <Key className="w-4 h-4" />
+              Kundenportal Login
+            </h3>
+            {(customer as any).auth_user_id ? (
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-sm text-green-400 flex items-center gap-1">
+                  <Check className="w-4 h-4" />
+                  Login aktiv
+                </span>
+                <button
+                  onClick={() => setShowDeleteLoginModal(true)}
+                  className="btn btn-ghost text-red-400 hover:!bg-red-900/30 min-h-[40px] px-4"
+                >
+                  <UserX className="w-4 h-4" />
+                  Löschen
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  if (!customer.email) {
+                    alert("Kunde hat keine E-Mail-Adresse. Bitte zuerst E-Mail hinterlegen.");
+                    return;
+                  }
+                  setShowLoginModal(true);
+                }}
+                className="btn btn-primary btn-sm"
+              >
+                <UserPlus className="w-4 h-4" />
+                Login erstellen
+              </button>
+            )}
+          </div>
+          {(customer as any).auth_user_id && customer.email && (
+            <p className="text-sm text-neutral-500 mt-2">
+              Anmeldung mit: <span className="text-white">{customer.email}</span>
+            </p>
+          )}
         </div>
 
         {/* Notes */}
@@ -513,6 +641,112 @@ export function CustomerDetail({ customerId }: Props) {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Create Login Modal */}
+      <Modal 
+        open={showLoginModal} 
+        onClose={() => { setShowLoginModal(false); setNewLoginData(null); }} 
+        title="Kundenportal Login erstellen"
+      >
+        <div className="space-y-4">
+          {!newLoginData ? (
+            <>
+              <p className="text-neutral-300">
+                Ein Login für das Kundenportal wird erstellt für:
+              </p>
+              <div className="p-4 bg-[#1a1a1a] rounded-xl">
+                <p className="text-white font-medium">{customer.email}</p>
+                <p className="text-sm text-neutral-500 mt-1">
+                  Ein sicheres Passwort wird automatisch generiert.
+                </p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowLoginModal(false)}
+                  className="flex-1 btn btn-secondary"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  onClick={createLogin}
+                  disabled={creatingLogin}
+                  className="flex-1 btn btn-primary"
+                >
+                  {creatingLogin ? "Erstellen..." : "Login erstellen"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
+                <p className="text-green-400 font-medium flex items-center gap-2">
+                  <Check className="w-5 h-5" />
+                  Login erfolgreich erstellt!
+                </p>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="form-label">E-Mail</label>
+                  <div className="input bg-[#0a0a0a]">{newLoginData.email}</div>
+                </div>
+                <div>
+                  <label className="form-label">Passwort</label>
+                  <div className="flex gap-2">
+                    <div className="input bg-[#0a0a0a] flex-1 font-mono">{newLoginData.password}</div>
+                    <button
+                      onClick={copyPassword}
+                      className="btn btn-secondary"
+                      title="Passwort kopieren"
+                    >
+                      {copiedPassword ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <p className="text-sm text-yellow-500">
+                ⚠️ Bitte teile diese Zugangsdaten sicher mit dem Kunden. Das Passwort wird nicht erneut angezeigt.
+              </p>
+              <button
+                onClick={() => { setShowLoginModal(false); setNewLoginData(null); }}
+                className="btn btn-primary w-full"
+              >
+                Fertig
+              </button>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Delete Login Modal */}
+      <Modal 
+        open={showDeleteLoginModal} 
+        onClose={() => setShowDeleteLoginModal(false)} 
+        title="Login löschen"
+      >
+        <div className="space-y-4">
+          <p className="text-neutral-300">
+            Möchtest du den Kundenportal-Login für <span className="font-semibold text-white">{customer.email}</span> wirklich löschen?
+          </p>
+          <p className="text-sm text-neutral-500">
+            Der Kunde kann sich danach nicht mehr im Kundenportal anmelden.
+          </p>
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={() => setShowDeleteLoginModal(false)}
+              className="flex-1 btn btn-secondary"
+            >
+              Abbrechen
+            </button>
+            <button
+              onClick={deleteLogin}
+              disabled={deletingLogin}
+              className="flex-1 btn bg-red-500 hover:bg-red-600 text-white"
+            >
+              {deletingLogin ? "Löschen..." : "Login löschen"}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
