@@ -41,12 +41,17 @@ export default function CustomersPage() {
 
   async function loadCustomers() {
     setLoading(true);
-    const { data } = await supabase
-      .from("customers")
-      .select("*")
-      .order("created_at", { ascending: false });
-    setCustomers(data || []);
-    setLoading(false);
+    try {
+      const { data } = await supabase
+        .from("customers")
+        .select("*")
+        .order("created_at", { ascending: false });
+      setCustomers(data || []);
+    } catch (err) {
+      console.error("Error loading customers:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const filtered = customers.filter(c => {

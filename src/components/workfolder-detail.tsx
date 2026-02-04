@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Spinner } from "@/components/ui/spinner";
 import { Modal } from "@/components/ui/modal";
+import { getTradeLabel, getTradeOptions, loadTradesFromDB } from "@/lib/trades";
 import {
   ArrowLeft,
   User,
@@ -36,14 +37,15 @@ import {
   Shield,
   Folder,
   ListTodo,
+  Building2,
   type LucideIcon,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { Upload3DModel } from "@/components/upload-3d-model";
 import type { 
   Project, 
   Customer, 
-  Appointment, 
-  Subcontractor, 
+  Appointment,
   Document,
   AppointmentType,
   AppointmentStatus,
@@ -106,9 +108,8 @@ export function WorkfolderDetail({ project }: Props) {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [parentProject, setParentProject] = useState<Project | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [assignedSubs, setAssignedSubs] = useState<any[]>([]);
+  const [partnerJobs, setPartnerJobs] = useState<any[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [allSubcontractors, setAllSubcontractors] = useState<Subcontractor[]>([]);
   const [loading, setLoading] = useState(true);
   const [quotes, setQuotes] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
@@ -120,8 +121,9 @@ export function WorkfolderDetail({ project }: Props) {
   // Modals
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
-  const [showSubcontractorModal, setShowSubcontractorModal] = useState(false);
   const [showDocumentModal, setShowDocumentModal] = useState(false);
+  const [showJobModal, setShowJobModal] = useState(false);
+  const [editingJob, setEditingJob] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   
@@ -158,10 +160,18 @@ export function WorkfolderDetail({ project }: Props) {
     subcontractor_ids: [] as string[],
   });
 
-  const [selectedSubId, setSelectedSubId] = useState("");
+  // Partner Job Form
+  const [jobForm, setJobForm] = useState({
+    title: "",
+    description: "",
+    trade: "dc_montage",
+    scheduled_date: "",
+    deadline: "",
+  });
 
   const router = useRouter();
   const supabase = createClient();
+  const [tradeOptions, setTradeOptions] = useState(getTradeOptions());
 
   useEffect(() => {
     loadData();
@@ -169,6 +179,10 @@ export function WorkfolderDetail({ project }: Props) {
 
   async function loadData() {
     setLoading(true);
+    
+    // Trades aus DB laden (für Labels)
+    await loadTradesFromDB(supabase, true);
+    setTradeOptions(getTradeOptions());
 
     // Load customer
     if (project.customer_id) {
@@ -193,20 +207,76 @@ export function WorkfolderDetail({ project }: Props) {
       }
     }
 
-    // Load appointments
+    // Load internal appointments
     const { data: appts } = await supabase
       .from("appointments")
       .select("*")
       .eq("project_id", project.id)
       .order("start_time", { ascending: true });
-    setAppointments(appts || []);
-
-    // Load assigned subcontractors
-    const { data: subs } = await supabase
-      .from("project_subcontractors")
-      .select("*, subcontractor:subcontractors(*)")
+    
+    // Load partner jobs for this project first
+    const { data: partnerJobs } = await supabase
+      .from("partner_jobs")
+      .select("id")
       .eq("project_id", project.id);
-    setAssignedSubs(subs || []);
+    
+    const jobIds = (partnerJobs || []).map(j => j.id);
+    
+    // Load partner job appointments for those jobs
+    let partnerAppts: any[] = [];
+    if (jobIds.length > 0) {
+      const { data } = await supabase
+        .from("partner_job_appointments")
+        .select(`
+          id, title, date, time_start, time_end, notes,
+          job:partner_jobs!job_id (
+            id, title, trade,
+            partner:partners!accepted_by_partner_id (id, company_name)
+          )
+        `)
+        .in("job_id", jobIds)
+        .order("date", { ascending: true });
+      partnerAppts = data || [];
+    }
+    
+    // Combine both - transform partner appointments to match Appointment interface
+    const internalAppts = (appts || []).map((a: any) => ({
+      ...a,
+      _type: 'internal' as const,
+    }));
+    
+    const partnerApptsTransformed = partnerAppts.filter((a: any) => a.job).map((a: any) => ({
+      id: a.id,
+      title: a.title,
+      start_time: a.date && a.time_start ? `${a.date}T${a.time_start}` : a.date,
+      end_time: a.date && a.time_end ? `${a.date}T${a.time_end}` : null,
+      description: a.notes,
+      status: 'scheduled' as const,
+      appointment_type: a.job?.trade || 'sonstiges',
+      _type: 'partner' as const,
+      _partner_name: a.job?.partner?.company_name,
+      _trade: a.job?.trade,
+    }));
+    
+    const allAppts = [...internalAppts, ...partnerApptsTransformed].sort((a, b) => {
+      const aTime = a.start_time ? new Date(a.start_time).getTime() : 0;
+      const bTime = b.start_time ? new Date(b.start_time).getTime() : 0;
+      return aTime - bTime;
+    });
+    
+    setAppointments(allAppts as any);
+
+    // Load partner jobs for this project
+    const { data: jobs } = await supabase
+      .from("partner_jobs")
+      .select(`
+        *,
+        partner:partners!accepted_by_partner_id (id, company_name, email, phone),
+        appointments:partner_job_appointments (id, title, date, time_start)
+      `)
+      .eq("project_id", project.id)
+      .order("created_at", { ascending: false });
+    setPartnerJobs(jobs || []);
 
     // Load documents
     const { data: docs } = await supabase
@@ -227,7 +297,7 @@ export function WorkfolderDetail({ project }: Props) {
     // Load tasks
     const { data: tasksData } = await supabase
       .from("project_tasks")
-      .select("*, assigned_user:users(id, display_name), assigned_sub:subcontractors(id, company_name)")
+      .select("*, assigned_user:users(id, display_name), assigned_partner:partners(id, company_name)")
       .eq("project_id", project.id)
       .order("sort_order")
       .order("created_at", { ascending: false });
@@ -240,14 +310,6 @@ export function WorkfolderDetail({ project }: Props) {
       .eq("active", true)
       .order("display_name");
     setAllUsers(usersData || []);
-
-    // Load all subcontractors for assignment
-    const { data: allSubs } = await supabase
-      .from("subcontractors")
-      .select("*")
-      .eq("status", "active")
-      .order("company_name");
-    setAllSubcontractors(allSubs || []);
 
     // Load form templates (filtered by brand if parent exists)
     const templatesQuery = supabase
@@ -409,20 +471,52 @@ export function WorkfolderDetail({ project }: Props) {
     loadData();
   }
 
-  async function assignSubcontractor(e: React.FormEvent) {
-    e.preventDefault();
-    if (!selectedSubId) return;
-    
-    setSaving(true);
-    
-    const sub = allSubcontractors.find(s => s.id === selectedSubId);
-    
-    const { error } = await supabase.from("project_subcontractors").insert({
-      project_id: project.id,
-      subcontractor_id: selectedSubId,
-      trade: sub?.trade || "sonstige",
-      status: "assigned",
+  // Partner Job functions
+  function openNewJob() {
+    setEditingJob(null);
+    setJobForm({
+      title: "",
+      description: "",
+      trade: "dc_montage",
+      scheduled_date: "",
+      deadline: "",
     });
+    setShowJobModal(true);
+  }
+
+  function openEditJob(job: any) {
+    setEditingJob(job);
+    setJobForm({
+      title: job.title || "",
+      description: job.description || "",
+      trade: job.trade || "dc_montage",
+      scheduled_date: job.scheduled_date || "",
+      deadline: job.deadline || "",
+    });
+    setShowJobModal(true);
+  }
+
+  async function saveJob(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+
+    const payload = {
+      project_id: project.id,
+      title: jobForm.title,
+      description: jobForm.description || null,
+      trade: jobForm.trade,
+      scheduled_date: jobForm.scheduled_date || null,
+      deadline: jobForm.deadline || null,
+      status: "open",
+    };
+
+    let error;
+    if (editingJob) {
+      const { status, ...updatePayload } = payload; // Don't overwrite status on edit
+      ({ error } = await supabase.from("partner_jobs").update(updatePayload).eq("id", editingJob.id));
+    } else {
+      ({ error } = await supabase.from("partner_jobs").insert(payload));
+    }
 
     setSaving(false);
 
@@ -431,14 +525,19 @@ export function WorkfolderDetail({ project }: Props) {
       return;
     }
 
-    setShowSubcontractorModal(false);
-    setSelectedSubId("");
+    setShowJobModal(false);
+    setEditingJob(null);
     loadData();
   }
 
-  async function removeSubcontractor(assignmentId: string) {
-    if (!confirm("Subunternehmer wirklich entfernen?")) return;
-    await supabase.from("project_subcontractors").delete().eq("id", assignmentId);
+  async function deleteJob(jobId: string) {
+    if (!confirm("Job wirklich löschen? Alle zugehörigen Termine werden ebenfalls gelöscht.")) return;
+    
+    const { error } = await supabase.from("partner_jobs").delete().eq("id", jobId);
+    if (error) {
+      alert("Fehler: " + error.message);
+      return;
+    }
     loadData();
   }
 
@@ -570,7 +669,7 @@ export function WorkfolderDetail({ project }: Props) {
     { id: "quotes", label: "Angebote", icon: FileSignature, count: quotes.length },
     { id: "tasks", label: "Aufgaben", icon: ListTodo, count: tasks.filter(t => t.status !== "done").length },
     { id: "appointments", label: "Termine", icon: Calendar, count: appointments.length },
-    { id: "subcontractors", label: "Subunternehmer", icon: Users, count: assignedSubs.length },
+    { id: "subcontractors", label: "Partner", icon: Building2, count: partnerJobs.length },
     { id: "documents", label: "Dokumente", icon: FileText, count: documents.length },
     { id: "gallery", label: "Galerie", icon: ImageIcon },
     { id: "forms", label: "Formulare", icon: ClipboardList, count: formSubmissions.length },
@@ -610,6 +709,18 @@ export function WorkfolderDetail({ project }: Props) {
                   </option>
                 ))}
               </select>
+            )}
+            
+            {/* Customer Portal Preview Button */}
+            {customer && (
+              <button
+                onClick={() => window.open(`/portal?impersonate=${customer.id}`, '_blank')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+                title="Als dieser Kunde das Portal öffnen"
+              >
+                <Eye className="w-4 h-4" />
+                Kundenansicht
+              </button>
             )}
           </div>
         </div>
@@ -790,8 +901,8 @@ export function WorkfolderDetail({ project }: Props) {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-neutral-400">Subunternehmer</span>
-                  <span className="text-white">{assignedSubs.length}</span>
+                  <span className="text-neutral-400">Partner-Aufträge</span>
+                  <span className="text-white">{partnerJobs.length}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-neutral-400">Dokumente</span>
@@ -835,7 +946,13 @@ export function WorkfolderDetail({ project }: Props) {
             tasks={tasks}
             projectId={project.id}
             users={allUsers}
-            subcontractors={allSubcontractors}
+            partners={
+              // Extrahiere unique Partner aus angenommenen Jobs
+              partnerJobs
+                .filter((j: any) => j.partner && j.status !== 'open')
+                .map((j: any) => ({ id: j.partner.id, company_name: j.partner.company_name }))
+                .filter((p, idx, arr) => arr.findIndex(x => x.id === p.id) === idx)
+            }
             onRefresh={loadData}
           />
         )}
@@ -844,10 +961,7 @@ export function WorkfolderDetail({ project }: Props) {
         {activeTab === "appointments" && (
           <div className="space-y-4">
             <div className="flex justify-end">
-              <button
-                onClick={openNewAppointment}
-                className="btn btn-primary btn-sm"
-              >
+              <button onClick={openNewAppointment} className="btn btn-primary btn-sm">
                 <Plus className="w-4 h-4" />
                 Termin hinzufügen
               </button>
@@ -859,100 +973,249 @@ export function WorkfolderDetail({ project }: Props) {
                 <p>Noch keine Termine</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {appointments.map((appt) => (
-                  <div 
-                    key={appt.id} 
-                    className="card p-4 hover:bg-neutral-800/50 cursor-pointer transition-colors"
-                    onClick={() => openEditAppointment(appt)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm text-neutral-400">{appointmentTypeLabels[appt.appointment_type]}</span>
-                          <span className={`badge ${appointmentStatusColors[appt.status]}`}>
-                            {appointmentStatusLabels[appt.status]}
-                          </span>
-                        </div>
-                        <h4 className="font-semibold text-white">{appt.title}</h4>
-                        <p className="text-sm text-neutral-400 flex items-center gap-1 mt-1">
-                          <Clock className="w-3 h-3" />
-                          {new Date(appt.start_time).toLocaleString("de-DE")}
-                        </p>
-                        {appt.description && (
-                          <p className="text-sm text-neutral-500 mt-2">{appt.description}</p>
-                        )}
-                      </div>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); openEditAppointment(appt); }}
-                          className="btn btn-ghost btn-sm"
-                          title="Bearbeiten"
+              <div className="card overflow-hidden">
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-xs text-neutral-500 uppercase tracking-wide border-b border-neutral-800 bg-neutral-900/50">
+                      <th className="text-left py-2 px-4 w-10"></th>
+                      <th className="text-left py-2 px-4">Termin</th>
+                      <th className="text-left py-2 px-4 w-36">Typ</th>
+                      <th className="text-left py-2 px-4 w-40">Datum</th>
+                      <th className="text-left py-2 px-4 w-28">Status</th>
+                      <th className="w-20"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {appointments.map((appt: any) => {
+                      const isPartner = appt._type === 'partner';
+                      const isCompleted = appt.status === 'completed';
+                      
+                      return (
+                        <tr 
+                          key={appt.id} 
+                          className={`border-b border-neutral-800/50 last:border-0 transition-colors ${
+                            isCompleted ? "opacity-50" : "hover:bg-neutral-800/30"
+                          } ${!isPartner ? "cursor-pointer" : ""}`}
+                          onClick={() => !isPartner && openEditAppointment(appt)}
                         >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        {appt.status !== "completed" && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); updateAppointmentStatus(appt.id, "completed"); }}
-                            className="btn btn-ghost btn-sm text-green-400"
-                            title="Als erledigt markieren"
-                          >
-                            <CheckCircle className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                          {/* Indicator */}
+                          <td className="py-3 px-4">
+                            {isPartner ? (
+                              <div className="w-2 h-2 rounded-full bg-[#fa432a]" title="Partner-Termin" />
+                            ) : (
+                              <div className="w-2 h-2 rounded-full bg-blue-400" title="Interner Termin" />
+                            )}
+                          </td>
+
+                          {/* Info */}
+                          <td className="py-3 px-4">
+                            <p className={`font-medium ${isCompleted ? "line-through text-neutral-500" : "text-white"}`}>
+                              {appt.title}
+                            </p>
+                            {isPartner && appt._partner_name && (
+                              <p className="text-xs text-[#fa432a] mt-0.5">{appt._partner_name}</p>
+                            )}
+                            {appt.description && (
+                              <p className="text-xs text-neutral-500 mt-0.5 line-clamp-1">{appt.description}</p>
+                            )}
+                          </td>
+
+                          {/* Type */}
+                          <td className="py-3 px-4">
+                            <span className={`text-xs px-2 py-1 rounded whitespace-nowrap ${
+                              isPartner 
+                                ? "bg-[#fa432a]/20 text-[#fa432a]" 
+                                : "bg-blue-500/20 text-blue-400"
+                            }`}>
+                              {isPartner 
+                                ? getTradeLabel(appt._trade)
+                                : (appointmentTypeLabels[appt.appointment_type as keyof typeof appointmentTypeLabels] || appt.appointment_type)
+                              }
+                            </span>
+                          </td>
+
+                          {/* Date */}
+                          <td className="py-3 px-4 text-sm text-neutral-400">
+                            {appt.start_time 
+                              ? new Date(appt.start_time).toLocaleString("de-DE", { 
+                                  day: "2-digit", month: "2-digit", year: "2-digit",
+                                  hour: "2-digit", minute: "2-digit"
+                                })
+                              : "–"
+                            }
+                          </td>
+
+                          {/* Status */}
+                          <td className="py-3 px-4">
+                            {!isPartner ? (
+                              <select
+                                value={appt.status}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => updateAppointmentStatus(appt.id, e.target.value as any)}
+                                className="bg-neutral-800 border border-neutral-700 text-neutral-300 rounded px-2 py-1 text-xs"
+                              >
+                                {Object.entries(appointmentStatusLabels).map(([key, label]) => (
+                                  <option key={key} value={key}>{label}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="text-xs text-neutral-500">–</span>
+                            )}
+                          </td>
+
+                          {/* Actions */}
+                          <td className="py-3 px-4">
+                            {!isPartner && (
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); openEditAppointment(appt); }}
+                                  className="text-neutral-500 hover:text-white"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); deleteAppointment(appt.id); }}
+                                  className="text-neutral-500 hover:text-red-400"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
         )}
 
         {/* Subcontractors */}
-        {activeTab === "subcontractors" && (
-          <div className="space-y-4">
-            <div className="flex justify-end">
-              <button
-                onClick={() => setShowSubcontractorModal(true)}
-                className="btn btn-primary btn-sm"
-              >
-                <Plus className="w-4 h-4" />
-                Subunternehmer zuweisen
-              </button>
-            </div>
+        {activeTab === "subcontractors" && (() => {
+          const jobStatusColors: Record<string, string> = {
+            open: "bg-yellow-500/20 text-yellow-400",
+            accepted: "bg-green-500/20 text-green-400",
+            in_progress: "bg-blue-500/20 text-blue-400",
+            completed: "bg-neutral-500/20 text-neutral-400",
+            cancelled: "bg-red-500/20 text-red-400",
+          };
+          const jobStatusLabels: Record<string, string> = {
+            open: "Im Pool",
+            accepted: "Angenommen",
+            in_progress: "In Arbeit",
+            completed: "Abgeschlossen",
+            cancelled: "Abgebrochen",
+          };
+          return (
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <button onClick={openNewJob} className="btn btn-primary btn-sm">
+                  <Plus className="w-4 h-4" />
+                  Job erstellen
+                </button>
+              </div>
 
-            {assignedSubs.length === 0 ? (
-              <div className="card p-8 text-center text-neutral-500">
-                <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p>Noch keine Subunternehmer zugewiesen</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {assignedSubs.map((assignment) => (
-                  <div key={assignment.id} className="card p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-semibold text-white">
-                          {assignment.subcontractor?.company_name || "Unbekannt"}
-                        </h4>
-                        <p className="text-sm text-neutral-400">
-                          {assignment.trade} • {assignment.scope || "Kein Arbeitsumfang definiert"}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => removeSubcontractor(assignment.id)}
-                        className="btn btn-ghost btn-sm text-red-400"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+              {partnerJobs.length === 0 ? (
+                <div className="card p-8 text-center text-neutral-500">
+                  <Building2 className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>Noch keine Partner-Aufträge</p>
+                  <p className="text-sm mt-1">Erstelle einen Job, der dann im Partner-Pool erscheint</p>
+                </div>
+              ) : (
+                <div className="card overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-xs text-neutral-500 uppercase tracking-wide border-b border-neutral-800 bg-neutral-900/50">
+                        <th className="text-left py-2 px-4">Job</th>
+                        <th className="text-left py-2 px-4 w-32">Gewerk</th>
+                        <th className="text-left py-2 px-4 w-40">Partner</th>
+                        <th className="text-left py-2 px-4 w-28">Datum</th>
+                        <th className="text-left py-2 px-4 w-28">Status</th>
+                        <th className="w-20"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {partnerJobs.map((job: any) => {
+                        const isCompleted = job.status === 'completed';
+                        
+                        return (
+                          <tr 
+                            key={job.id} 
+                            className={`border-b border-neutral-800/50 last:border-0 transition-colors cursor-pointer ${
+                              isCompleted ? "opacity-50" : "hover:bg-neutral-800/30"
+                            }`}
+                            onClick={() => openEditJob(job)}
+                          >
+                            {/* Job Info */}
+                            <td className="py-3 px-4">
+                              <p className={`font-medium ${isCompleted ? "text-neutral-500" : "text-white"}`}>
+                                {job.title}
+                              </p>
+                              {job.description && (
+                                <p className="text-xs text-neutral-500 mt-0.5 line-clamp-1">{job.description}</p>
+                              )}
+                            </td>
+
+                            {/* Trade */}
+                            <td className="py-3 px-4">
+                              <span className="text-xs px-2 py-1 rounded bg-neutral-800 text-neutral-300 whitespace-nowrap">
+                                {getTradeLabel(job.trade)}
+                              </span>
+                            </td>
+
+                            {/* Partner */}
+                            <td className="py-3 px-4">
+                              {job.partner ? (
+                                <span className="text-sm text-[#fa432a]">{job.partner.company_name}</span>
+                              ) : (
+                                <span className="text-sm text-neutral-500">– wartet –</span>
+                              )}
+                            </td>
+
+                            {/* Date */}
+                            <td className="py-3 px-4 text-sm text-neutral-400">
+                              {job.scheduled_date 
+                                ? new Date(job.scheduled_date).toLocaleDateString("de-DE")
+                                : "–"
+                              }
+                            </td>
+
+                            {/* Status */}
+                            <td className="py-3 px-4">
+                              <span className={`text-xs px-2 py-1 rounded ${jobStatusColors[job.status] || 'bg-neutral-700 text-neutral-300'}`}>
+                                {jobStatusLabels[job.status] || job.status}
+                              </span>
+                            </td>
+
+                            {/* Actions */}
+                            <td className="py-3 px-4">
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); openEditJob(job); }}
+                                  className="text-neutral-500 hover:text-white"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); deleteJob(job.id); }}
+                                  className="text-neutral-500 hover:text-red-400"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Documents */}
         {activeTab === "documents" && (() => {
@@ -987,6 +1250,14 @@ export function WorkfolderDetail({ project }: Props) {
                   <Plus className="w-4 h-4 mr-1" />
                   Hochladen
                 </button>
+              </div>
+
+              {/* 3D Model Upload */}
+              <div className="card p-4">
+                <Upload3DModel 
+                  projectId={project.id} 
+                  onSuccess={() => loadData()}
+                />
               </div>
 
               {documents.length === 0 ? (
@@ -1216,39 +1487,54 @@ export function WorkfolderDetail({ project }: Props) {
             {/* Submitted Forms */}
             {formSubmissions.length > 0 && (
               <div className="mt-6">
-                <h3 className="text-lg font-semibold mb-3">Ausgefüllte Formulare ({formSubmissions.length})</h3>
-                <div className="card divide-y divide-neutral-800">
-                  {formSubmissions.map((submission) => (
-                    <div
-                      key={submission.id}
-                      className="p-4 flex items-center justify-between hover:bg-neutral-800/30 transition-colors"
-                    >
-                      <div>
-                        <h4 className="font-medium text-white">
-                          {submission.form_template?.name || "Formular"}
-                        </h4>
-                        <p className="text-sm text-neutral-500">
-                          Ausgefüllt am {formatDate(submission.created_at)}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setViewingSubmission(submission)}
-                          className="btn btn-ghost btn-sm"
-                          title="Ansehen"
+                <h3 className="text-sm font-medium text-neutral-400 uppercase tracking-wide mb-3">
+                  Ausgefüllte Formulare ({formSubmissions.length})
+                </h3>
+                <div className="card overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-xs text-neutral-500 uppercase tracking-wide border-b border-neutral-800 bg-neutral-900/50">
+                        <th className="text-left py-2 px-4">Formular</th>
+                        <th className="text-left py-2 px-4 w-40">Ausgefüllt am</th>
+                        <th className="w-24"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {formSubmissions.map((submission) => (
+                        <tr
+                          key={submission.id}
+                          className="border-b border-neutral-800/50 last:border-0 hover:bg-neutral-800/30 transition-colors"
                         >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => deleteSubmission(submission.id)}
-                          className="btn btn-ghost btn-sm text-red-400"
-                          title="Löschen"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                          <td className="py-3 px-4">
+                            <p className="font-medium text-white">
+                              {submission.form_template?.name || "Formular"}
+                            </p>
+                          </td>
+                          <td className="py-3 px-4 text-sm text-neutral-400">
+                            {formatDate(submission.created_at)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => setViewingSubmission(submission)}
+                                className="text-neutral-500 hover:text-white"
+                                title="Ansehen"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => deleteSubmission(submission.id)}
+                                className="text-neutral-500 hover:text-red-400"
+                                title="Löschen"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
@@ -1310,24 +1596,6 @@ export function WorkfolderDetail({ project }: Props) {
           </div>
 
           <div>
-            <label className="label">Beteiligte Subunternehmer</label>
-            <select
-              className="input"
-              multiple
-              value={appointmentForm.subcontractor_ids}
-              onChange={(e) => {
-                const values = Array.from(e.target.selectedOptions, option => option.value);
-                setAppointmentForm({ ...appointmentForm, subcontractor_ids: values });
-              }}
-            >
-              {allSubcontractors.map((sub) => (
-                <option key={sub.id} value={sub.id}>{sub.company_name}</option>
-              ))}
-            </select>
-            <p className="text-xs text-neutral-500 mt-1">Strg/Cmd gedrückt halten für Mehrfachauswahl</p>
-          </div>
-
-          <div>
             <label className="label">Beschreibung</label>
             <textarea
               className="input"
@@ -1379,38 +1647,101 @@ export function WorkfolderDetail({ project }: Props) {
         </form>
       </Modal>
 
-      {/* Modal: Assign Subcontractor */}
+      {/* Modal: Partner Job */}
       <Modal
-        open={showSubcontractorModal}
-        onClose={() => setShowSubcontractorModal(false)}
-        title="Subunternehmer zuweisen"
+        open={showJobModal}
+        onClose={() => { setShowJobModal(false); setEditingJob(null); }}
+        title={editingJob ? "Job bearbeiten" : "Neuer Partner-Job"}
       >
-        <form onSubmit={assignSubcontractor} className="space-y-4">
+        <form onSubmit={saveJob} className="space-y-4">
           <div>
-            <label className="label">Subunternehmer auswählen *</label>
-            <select
+            <label className="label">Titel *</label>
+            <input
+              type="text"
               className="input"
-              value={selectedSubId}
-              onChange={(e) => setSelectedSubId(e.target.value)}
+              value={jobForm.title}
+              onChange={(e) => setJobForm({ ...jobForm, title: e.target.value })}
+              placeholder="z.B. DC-Montage Dachfläche"
               required
-            >
-              <option value="">-- Bitte wählen --</option>
-              {allSubcontractors
-                .filter(s => !assignedSubs.some(a => a.subcontractor_id === s.id))
-                .map((sub) => (
-                  <option key={sub.id} value={sub.id}>
-                    {sub.company_name} ({sub.trade})
-                  </option>
-                ))}
-            </select>
+            />
           </div>
 
+          <div>
+            <label className="label">Gewerk *</label>
+            <select
+              className="input"
+              value={jobForm.trade}
+              onChange={(e) => setJobForm({ ...jobForm, trade: e.target.value })}
+            >
+              {tradeOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-neutral-500 mt-1">
+              Nur Partner mit diesem Gewerk sehen den Job im Pool
+            </p>
+          </div>
+
+          <div>
+            <label className="label">Beschreibung</label>
+            <textarea
+              className="input"
+              rows={3}
+              value={jobForm.description}
+              onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })}
+              placeholder="Details zum Auftrag, Besonderheiten, etc."
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Geplantes Datum</label>
+              <input
+                type="date"
+                className="input"
+                value={jobForm.scheduled_date}
+                onChange={(e) => setJobForm({ ...jobForm, scheduled_date: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="label">Deadline</label>
+              <input
+                type="date"
+                className="input"
+                value={jobForm.deadline}
+                onChange={(e) => setJobForm({ ...jobForm, deadline: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {editingJob && (
+            <div>
+              <label className="label">Status</label>
+              <select
+                className="input"
+                value={editingJob.status}
+                onChange={async (e) => {
+                  const newStatus = e.target.value;
+                  await supabase.from("partner_jobs").update({ status: newStatus }).eq("id", editingJob.id);
+                  setEditingJob({ ...editingJob, status: newStatus });
+                  loadData();
+                }}
+              >
+                <option value="open">Offen (im Pool)</option>
+                <option value="accepted">Angenommen</option>
+                <option value="in_progress">In Arbeit</option>
+                <option value="completed">Abgeschlossen</option>
+                <option value="cancelled">Abgebrochen</option>
+              </select>
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setShowSubcontractorModal(false)} className="btn btn-ghost">
+            <button type="button" onClick={() => { setShowJobModal(false); setEditingJob(null); }} className="btn btn-ghost">
               Abbrechen
             </button>
-            <button type="submit" className="btn btn-primary" disabled={saving || !selectedSubId}>
-              {saving ? <Spinner /> : "Zuweisen"}
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? <Spinner /> : (editingJob ? "Speichern" : "Erstellen")}
             </button>
           </div>
         </form>
@@ -2014,84 +2345,101 @@ function QuotesTab({ quotes, projectId, customerId, onRefresh }: {
           <p>Noch keine Angebote</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {quotes.map((quote) => {
-            const statusInfo = getStatusInfo(quote.status);
-            const isExported = !!quote.lexware_quotation_id;
-            return (
-              <div 
-                key={quote.id} 
-                className={`card px-4 py-3 transition-colors relative cursor-pointer hover:bg-neutral-800/50 ${statusMenuId === quote.id ? "z-50" : ""}`}
-                onClick={() => {
-                  // If exported to Lexware, open PDF directly
-                  if (isExported) {
-                    window.open(`/api/lexware/quote-pdf?lexwareId=${quote.lexware_quotation_id}`, "_blank");
-                  } else {
-                    router.push(`/quotes/${quote.id}`);
-                  }
-                }}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      {isExported && (
-                        <span title="PDF öffnen">
-                          <FileText className="w-3 h-3 text-blue-400" />
-                        </span>
-                      )}
-                      <span className={`text-xs font-mono ${isExported ? "text-blue-400" : "text-neutral-500"}`}>
-                        {quote.lexware_quote_number || quote.quote_number || `#${quote.id.slice(0, 6)}`}
+        <div className="card overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="text-xs text-neutral-500 uppercase tracking-wide border-b border-neutral-800 bg-neutral-900/50">
+                <th className="text-left py-2 px-4">Angebot</th>
+                <th className="text-left py-2 px-4 w-28">Datum</th>
+                <th className="text-right py-2 px-4 w-32">Betrag</th>
+                <th className="text-left py-2 px-4 w-32">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {quotes.map((quote) => {
+                const statusInfo = getStatusInfo(quote.status);
+                const isExported = !!quote.lexware_quotation_id;
+                
+                return (
+                  <tr 
+                    key={quote.id} 
+                    className="border-b border-neutral-800/50 last:border-0 transition-colors cursor-pointer hover:bg-neutral-800/30"
+                    onClick={() => {
+                      if (isExported) {
+                        window.open(`/api/lexware/quote-pdf?lexwareId=${quote.lexware_quotation_id}`, "_blank");
+                      } else {
+                        router.push(`/quotes/${quote.id}`);
+                      }
+                    }}
+                  >
+                    {/* Info */}
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        {isExported && <FileText className="w-4 h-4 text-blue-400" />}
+                        <div>
+                          <p className="font-medium text-white hover:text-[#fa432a]">
+                            {quote.package_title || quote.title}
+                          </p>
+                          <p className={`text-xs font-mono ${isExported ? "text-blue-400" : "text-neutral-500"}`}>
+                            {quote.lexware_quote_number || quote.quote_number || `#${quote.id.slice(0, 6)}`}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Date */}
+                    <td className="py-3 px-4 text-sm text-neutral-400">
+                      {new Date(quote.quote_date).toLocaleDateString("de-DE")}
+                    </td>
+
+                    {/* Amount */}
+                    <td className="py-3 px-4 text-right">
+                      <span className="font-semibold text-white">
+                        {new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(quote.total_amount)}
                       </span>
+                    </td>
+
+                    {/* Status */}
+                    <td className="py-3 px-4 relative">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setStatusMenuId(statusMenuId === quote.id ? null : quote.id);
                         }}
-                        className={`text-[10px] px-1.5 py-0.5 rounded hover:opacity-80 ${statusInfo.bg} ${statusInfo.text}`}
+                        className={`text-xs px-2 py-1 rounded ${statusInfo.bg} ${statusInfo.text}`}
                       >
                         {statusInfo.label}
                       </button>
-                    </div>
-                    <h4 className="text-sm font-medium text-white hover:text-[#fa432a]">
-                      {quote.package_title || quote.title}
-                    </h4>
-                  </div>
-                  <div className="text-right">
-                    <span className="font-bold text-white">
-                      {new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(quote.total_amount)}
-                    </span>
-                    <p className="text-xs text-neutral-500">
-                      {new Date(quote.quote_date).toLocaleDateString("de-DE")}
-                    </p>
-                  </div>
-                </div>
 
-                {/* Status Menu */}
-                {statusMenuId === quote.id && (
-                  <div 
-                    ref={menuRef}
-                    className="absolute left-24 top-2 z-[100] bg-[#1a1a1a] border border-[#333] rounded-lg shadow-xl py-1 min-w-[140px]"
-                  >
-                    {statusOptions.map((opt) => (
-                      <button
-                        key={opt.key}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          updateStatus(quote.id, opt.key);
-                        }}
-                        className={`w-full px-3 py-1.5 text-left text-xs hover:bg-[#262626] flex items-center gap-2 ${
-                          quote.status === opt.key ? "text-[#fa432a]" : "text-neutral-300"
-                        }`}
-                      >
-                        <span className={`w-2 h-2 rounded-full ${opt.bg}`} />
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                      {/* Status Menu */}
+                      {statusMenuId === quote.id && (
+                        <div 
+                          ref={menuRef}
+                          className="absolute right-0 top-full mt-1 z-[100] bg-[#1a1a1a] border border-[#333] rounded-lg shadow-xl py-1 min-w-[140px]"
+                        >
+                          {statusOptions.map((opt) => (
+                            <button
+                              key={opt.key}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateStatus(quote.id, opt.key);
+                              }}
+                              className={`w-full px-3 py-1.5 text-left text-xs hover:bg-[#262626] flex items-center gap-2 ${
+                                quote.status === opt.key ? "text-[#fa432a]" : "text-neutral-300"
+                              }`}
+                            >
+                              <span className={`w-2 h-2 rounded-full ${opt.bg}`} />
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -2099,11 +2447,11 @@ function QuotesTab({ quotes, projectId, customerId, onRefresh }: {
 }
 
 // Tasks Tab Component
-function TasksTab({ tasks, projectId, users, subcontractors, onRefresh }: {
+function TasksTab({ tasks, projectId, users, partners, onRefresh }: {
   tasks: any[];
   projectId: string;
   users: any[];
-  subcontractors: any[];
+  partners: { id: string; company_name: string }[];
   onRefresh: () => void;
 }) {
   const supabase = createClient();
@@ -2154,7 +2502,7 @@ function TasksTab({ tasks, projectId, users, subcontractors, onRefresh }: {
     setPriority(task.priority);
     setDueDate(task.due_date || "");
     setAssignedUserId(task.assigned_user_id || "");
-    setAssignedSubId(task.assigned_subcontractor_id || "");
+    setAssignedSubId(task.assigned_partner_id || "");
     setShowModal(true);
   }
 
@@ -2170,7 +2518,7 @@ function TasksTab({ tasks, projectId, users, subcontractors, onRefresh }: {
       priority,
       due_date: dueDate || null,
       assigned_user_id: assignedUserId || null,
-      assigned_subcontractor_id: assignedSubId || null,
+      assigned_partner_id: assignedSubId || null,
     };
 
     let error;
@@ -2185,12 +2533,14 @@ function TasksTab({ tasks, projectId, users, subcontractors, onRefresh }: {
       error = result.error;
     }
 
+    setSaving(false);
+
     if (error) {
       console.error("Error saving task:", error);
-      alert(`Fehler: ${error.message}`);
+      alert(`Fehler beim Speichern: ${error.message}`);
+      return;
     }
 
-    setSaving(false);
     setShowModal(false);
     onRefresh();
   }
@@ -2214,12 +2564,58 @@ function TasksTab({ tasks, projectId, users, subcontractors, onRefresh }: {
     onRefresh();
   }
 
+  const [filter, setFilter] = useState<"open" | "done" | "all">("open");
+  
   const openTasks = tasks.filter(t => t.status !== "done" && t.status !== "cancelled");
   const doneTasks = tasks.filter(t => t.status === "done");
+  const overdueCount = tasks.filter(t => 
+    t.due_date && new Date(t.due_date) < new Date() && t.status !== "done"
+  ).length;
+
+  const filteredTasks = tasks.filter(t => {
+    if (filter === "open") return t.status !== "done" && t.status !== "cancelled";
+    if (filter === "done") return t.status === "done";
+    return true;
+  });
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      {/* Header mit Stats */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="flex bg-neutral-900 rounded-lg p-0.5 border border-neutral-800">
+            <button
+              onClick={() => setFilter("open")}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                filter === "open" ? "bg-[#fa432a] text-white" : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              Offen ({openTasks.length})
+            </button>
+            <button
+              onClick={() => setFilter("done")}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                filter === "done" ? "bg-[#fa432a] text-white" : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              Erledigt ({doneTasks.length})
+            </button>
+            <button
+              onClick={() => setFilter("all")}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                filter === "all" ? "bg-[#fa432a] text-white" : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              Alle
+            </button>
+          </div>
+          {overdueCount > 0 && (
+            <span className="text-xs text-red-400 flex items-center gap-1">
+              <AlertCircle className="w-3 h-3" />
+              {overdueCount} überfällig
+            </span>
+          )}
+        </div>
         <button onClick={openNew} className="btn btn-primary btn-sm">
           <Plus className="w-4 h-4" />
           Neue Aufgabe
@@ -2231,69 +2627,141 @@ function TasksTab({ tasks, projectId, users, subcontractors, onRefresh }: {
           <ListTodo className="w-12 h-12 mx-auto mb-3 opacity-50" />
           <p>Noch keine Aufgaben</p>
         </div>
+      ) : filteredTasks.length === 0 ? (
+        <div className="card p-8 text-center text-neutral-500">
+          <p>{filter === "open" ? "Keine offenen Aufgaben" : "Keine erledigten Aufgaben"}</p>
+        </div>
       ) : (
-        <div className="space-y-4">
-          {/* Open Tasks */}
-          {openTasks.length > 0 && (
-            <div className="space-y-2">
-              {openTasks.map((task) => (
-                <div key={task.id} className="card px-4 py-3 flex items-center gap-3">
-                  <button
-                    onClick={() => toggleStatus(task)}
-                    className="w-5 h-5 rounded border-2 border-neutral-600 hover:border-green-400 flex items-center justify-center transition-colors"
+        <div className="card overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="text-xs text-neutral-500 uppercase tracking-wide border-b border-neutral-800 bg-neutral-900/50">
+                <th className="text-left py-2 px-4 w-10"></th>
+                <th className="text-left py-2 px-4">Aufgabe</th>
+                <th className="text-left py-2 px-4 w-28">Priorität</th>
+                <th className="text-left py-2 px-4 w-28">Fällig</th>
+                <th className="text-left py-2 px-4 w-36">Zugewiesen</th>
+                <th className="text-left py-2 px-4 w-28">Status</th>
+                <th className="w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTasks.map((task) => {
+                const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== "done";
+                const isDone = task.status === "done";
+                const priority = priorityOptions.find(p => p.key === task.priority);
+                
+                return (
+                  <tr 
+                    key={task.id} 
+                    className={`border-b border-neutral-800/50 last:border-0 transition-colors ${
+                      isDone ? "opacity-50" : "hover:bg-neutral-800/30"
+                    }`}
                   >
-                  </button>
-                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openEdit(task)}>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm font-medium ${priorityOptions.find(p => p.key === task.priority)?.color}`}>
-                        {task.title}
-                      </span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${statusOptions.find(s => s.key === task.status)?.color}`}>
-                        {statusOptions.find(s => s.key === task.status)?.label}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-neutral-500 mt-0.5">
-                      {task.assigned_user?.display_name && (
-                        <span>👤 {task.assigned_user.display_name}</span>
-                      )}
-                      {task.assigned_sub?.company_name && (
-                        <span>🏢 {task.assigned_sub.company_name}</span>
-                      )}
-                      {task.due_date && (
-                        <span>📅 {new Date(task.due_date).toLocaleDateString("de-DE")}</span>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => deleteTask(task.id)}
-                    className="w-6 h-6 flex items-center justify-center text-neutral-600 hover:text-red-400"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+                    {/* Checkbox */}
+                    <td className="py-3 px-4">
+                      <button
+                        onClick={() => toggleStatus(task)}
+                        className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                          isDone 
+                            ? "border-green-500 bg-green-500/20 text-green-400" 
+                            : "border-neutral-600 hover:border-[#fa432a]"
+                        }`}
+                      >
+                        {isDone && <CheckCircle className="w-3 h-3" />}
+                      </button>
+                    </td>
 
-          {/* Done Tasks */}
-          {doneTasks.length > 0 && (
-            <div>
-              <p className="text-xs text-neutral-500 uppercase tracking-wide mb-2">Erledigt ({doneTasks.length})</p>
-              <div className="space-y-1">
-                {doneTasks.map((task) => (
-                  <div key={task.id} className="card px-4 py-2 flex items-center gap-3 opacity-60">
-                    <button
-                      onClick={() => toggleStatus(task)}
-                      className="w-5 h-5 rounded border-2 border-green-500 bg-green-500/20 flex items-center justify-center"
-                    >
-                      <CheckCircle className="w-3 h-3 text-green-400" />
-                    </button>
-                    <span className="text-sm text-neutral-400 line-through">{task.title}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+                    {/* Task Info */}
+                    <td className="py-3 px-4 cursor-pointer" onClick={() => openEdit(task)}>
+                      <p className={`font-medium ${isDone ? "line-through text-neutral-500" : "text-white hover:text-[#fa432a]"}`}>
+                        {task.title}
+                      </p>
+                      {task.description && (
+                        <p className="text-xs text-neutral-500 mt-0.5 line-clamp-1">
+                          {task.description}
+                        </p>
+                      )}
+                    </td>
+
+                    {/* Priority */}
+                    <td className="py-3 px-4">
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        task.priority === "urgent" ? "bg-red-500/20 text-red-400" :
+                        task.priority === "high" ? "bg-orange-500/20 text-orange-400" :
+                        task.priority === "low" ? "bg-neutral-500/10 text-neutral-500" :
+                        "bg-neutral-500/10 text-neutral-400"
+                      }`}>
+                        {priority?.label || "Normal"}
+                      </span>
+                    </td>
+
+                    {/* Due Date */}
+                    <td className="py-3 px-4">
+                      {task.due_date ? (
+                        <span className={`text-sm flex items-center gap-1 ${
+                          isOverdue ? "text-red-400" : "text-neutral-400"
+                        }`}>
+                          {isOverdue && <AlertCircle className="w-3 h-3" />}
+                          {new Date(task.due_date).toLocaleDateString("de-DE")}
+                        </span>
+                      ) : (
+                        <span className="text-neutral-600 text-sm">–</span>
+                      )}
+                    </td>
+
+                    {/* Assigned */}
+                    <td className="py-3 px-4">
+                      <div className="text-xs space-y-0.5">
+                        {task.assigned_user?.display_name && (
+                          <p className="text-neutral-400">{task.assigned_user.display_name}</p>
+                        )}
+                        {task.assigned_partner?.company_name && (
+                          <p className="text-[#fa432a]">{task.assigned_partner.company_name}</p>
+                        )}
+                        {!task.assigned_user?.display_name && !task.assigned_partner?.company_name && (
+                          <span className="text-neutral-600">–</span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Status */}
+                    <td className="py-3 px-4">
+                      <select
+                        value={task.status}
+                        onChange={async (e) => {
+                          await supabase
+                            .from("project_tasks")
+                            .update({ 
+                              status: e.target.value,
+                              completed_at: e.target.value === "done" ? new Date().toISOString() : null,
+                              updated_at: new Date().toISOString()
+                            })
+                            .eq("id", task.id);
+                          onRefresh();
+                        }}
+                        className="bg-neutral-800 border border-neutral-700 text-neutral-300 rounded px-2 py-1 text-xs w-full"
+                      >
+                        {statusOptions.map(s => (
+                          <option key={s.key} value={s.key}>{s.label}</option>
+                        ))}
+                      </select>
+                    </td>
+
+                    {/* Delete */}
+                    <td className="py-3 px-4">
+                      <button
+                        onClick={() => deleteTask(task.id)}
+                        className="text-neutral-600 hover:text-red-400 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -2362,11 +2830,11 @@ function TasksTab({ tasks, projectId, users, subcontractors, onRefresh }: {
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Subunternehmer</label>
+              <label className="form-label">Partner</label>
               <select className="input" value={assignedSubId} onChange={(e) => setAssignedSubId(e.target.value)}>
                 <option value="">Nicht zugewiesen</option>
-                {subcontractors.map(s => (
-                  <option key={s.id} value={s.id}>{s.company_name}</option>
+                {partners.map(p => (
+                  <option key={p.id} value={p.id}>{p.company_name}</option>
                 ))}
               </select>
             </div>

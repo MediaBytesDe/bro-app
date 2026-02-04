@@ -66,10 +66,23 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Logged in but on login page -> redirect to home
+  // Logged in but on login page -> redirect to role-based home
   if (pathname === "/login") {
+    // Need to get role first
+    const { data: profile } = await supabase
+      .from("users")
+      .select("role")
+      .eq("auth_id", user.id)
+      .single();
+    
     const url = request.nextUrl.clone();
-    url.pathname = "/";
+    if (profile?.role === "customer") {
+      url.pathname = "/portal";
+    } else if (profile?.role === "subcontractor") {
+      url.pathname = "/partner";
+    } else {
+      url.pathname = "/";
+    }
     return NextResponse.redirect(url);
   }
 
@@ -96,17 +109,14 @@ export async function updateSession(request: NextRequest) {
   const hasAccess = checkRouteAccess(pathname, role);
 
   if (!hasAccess) {
-    // Redirect to appropriate page based on role
+    // Redirect to appropriate home based on role
     const url = request.nextUrl.clone();
     
-    // Customers go to portal
     if (role === "customer") {
       url.pathname = "/portal";
     } else if (role === "subcontractor") {
-      // Subcontractors go to projects
-      url.pathname = "/projects";
+      url.pathname = "/partner";
     } else {
-      // Others go to home
       url.pathname = "/";
     }
     

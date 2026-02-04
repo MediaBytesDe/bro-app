@@ -5,89 +5,103 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Modal } from "@/components/ui/modal";
 import { Spinner } from "@/components/ui/spinner";
+import { getTradeOptions, getTradeLabel, loadTradesFromDB } from "@/lib/trades";
 import {
   ChevronLeft,
-  Wrench,
   Mail,
   Phone,
   MapPin,
-  Star,
   Pencil,
   Trash2,
-  Calendar,
+  Building2,
+  Users,
   Briefcase,
   Plus,
   CheckCircle,
-  Clock,
   XCircle,
+  Wrench,
+  UserPlus,
+  Clock,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
-import type { Subcontractor, Project, Appointment, TradeType } from "@/types/database";
+import { toast } from "sonner";
 
-// Partial type for project dropdown
-type ProjectOption = Pick<Project, "id" | "name" | "slug" | "icon">;
+interface Partner {
+  id: string;
+  company_name: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  city: string | null;
+  postal_code: string | null;
+  trades: string[];
+  active: boolean;
+  notes: string | null;
+  logo_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
-const tradeLabels: Record<TradeType, string> = {
-  elektriker: "⚡ Elektriker",
-  dachdecker: "🏠 Dachdecker",
-  sanitaer: "🚿 Sanitär",
-  heizung: "🔥 Heizung",
-  klima: "❄️ Klima",
-  maler: "🎨 Maler",
-  trockenbau: "🧱 Trockenbau",
-  geruestbau: "🏗️ Gerüstbau",
-  tiefbau: "⛏️ Tiefbau",
-  zimmerer: "🪵 Zimmerer",
-  sonstige: "🔧 Sonstige",
-};
+interface PartnerUser {
+  id: string;
+  display_name: string;
+  email: string;
+  phone: string | null;
+  role: string;
+  active: boolean;
+  joined_at: string | null;
+  created_at: string;
+}
 
-const statusLabels = {
-  active: "Aktiv",
-  inactive: "Inaktiv",
-  pending: "In Prüfung",
-  blacklisted: "Gesperrt",
-};
-
-const statusColors = {
-  active: "badge-success",
-  inactive: "badge-gray",
-  pending: "badge-warning",
-  blacklisted: "badge-error",
-};
+interface PartnerJob {
+  id: string;
+  title: string;
+  status: string;
+  trade: string | null;
+  scheduled_date: string | null;
+  project: {
+    name: string;
+    slug: string;
+  } | null;
+}
 
 interface Props {
   params: Promise<{ id: string }>;
 }
 
-export default function SubcontractorDetailPage({ params }: Props) {
+export default function PartnerDetailPage({ params }: Props) {
   const { id } = use(params);
-  const [subcontractor, setSubcontractor] = useState<Subcontractor | null>(null);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [assignedProjects, setAssignedProjects] = useState<ProjectOption[]>([]);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [partner, setPartner] = useState<Partner | null>(null);
+  const [users, setUsers] = useState<PartnerUser[]>([]);
+  const [jobs, setJobs] = useState<PartnerJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
-  const [showAssign, setShowAssign] = useState(false);
+  const [showAddUser, setShowAddUser] = useState(false);
+  
   const [editForm, setEditForm] = useState({
     company_name: "",
-    trade: "elektriker" as TradeType,
-    contact_name: "",
-    contact_email: "",
-    contact_phone: "",
-    street: "",
+    email: "",
+    phone: "",
+    address: "",
     postal_code: "",
     city: "",
-    tax_id: "",
-    hourly_rate: "",
+    trades: [] as string[],
     notes: "",
-    status: "active" as "active" | "inactive" | "pending" | "blacklisted",
-    rating: "",
+    active: true,
   });
-  const [selectedProjectId, setSelectedProjectId] = useState("");
+
+  const [userForm, setUserForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    role: "worker",
+    password: "",
+  });
 
   const router = useRouter();
   const supabase = createClient();
+  const [tradeOptions, setTradeOptions] = useState(getTradeOptions());
 
   useEffect(() => {
     loadData();
@@ -95,160 +109,223 @@ export default function SubcontractorDetailPage({ params }: Props) {
 
   async function loadData() {
     setLoading(true);
+    try {
+      // Trades aus DB laden (für Labels)
+      await loadTradesFromDB(supabase, true);
+      setTradeOptions(getTradeOptions());
+      
+      // Load partner
+      const { data: partnerData } = await supabase
+        .from("partners")
+        .select("*")
+        .eq("id", id)
+        .single();
 
-    // Load subcontractor
-    const { data: sub } = await supabase
-      .from("subcontractors")
-      .select("*")
-      .eq("id", id)
-      .single();
-
-    if (sub) {
-      setSubcontractor(sub);
-      setEditForm({
-        company_name: sub.company_name || "",
-        trade: sub.trade || "elektriker",
-        contact_name: sub.contact_name || "",
-        contact_email: sub.contact_email || "",
-        contact_phone: sub.contact_phone || "",
-        street: sub.street || "",
-        postal_code: sub.postal_code || "",
-        city: sub.city || "",
-        tax_id: sub.tax_id || "",
-        hourly_rate: sub.hourly_rate?.toString() || "",
-        notes: sub.notes || "",
-        status: sub.status || "active",
-        rating: sub.rating?.toString() || "",
-      });
-
-      // Load assigned projects
-      const { data: assignments } = await supabase
-        .from("project_subcontractors")
-        .select("project_id, projects(*)")
-        .eq("subcontractor_id", id);
-
-      if (assignments) {
-        setAssignedProjects(
-          assignments
-            .map((a) => a.projects as unknown as Project)
-            .filter(Boolean)
-        );
+      if (partnerData) {
+        setPartner({ ...partnerData, trades: partnerData.trades || [] });
+        setEditForm({
+          company_name: partnerData.company_name || "",
+          email: partnerData.email || "",
+          phone: partnerData.phone || "",
+          address: partnerData.address || "",
+          postal_code: partnerData.postal_code || "",
+          city: partnerData.city || "",
+          trades: partnerData.trades || [],
+          notes: partnerData.notes || "",
+          active: partnerData.active ?? true,
+        });
       }
 
-      // Load appointments
-      const { data: appts } = await supabase
-        .from("appointments")
+      // Load users
+      const { data: usersData } = await supabase
+        .from("partner_users")
         .select("*")
-        .contains("subcontractor_ids", [id])
-        .order("scheduled_date", { ascending: true });
+        .eq("partner_id", id)
+        .order("created_at");
 
-      setAppointments(appts || []);
+      setUsers(usersData || []);
+
+      // Load jobs
+      const { data: jobsData } = await supabase
+        .from("partner_jobs")
+        .select(`
+          id, title, status, trade, scheduled_date,
+          project:projects (name, slug)
+        `)
+        .eq("accepted_by_partner_id", id)
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      setJobs(jobsData || []);
+    } catch (err) {
+      console.error("Error loading partner:", err);
+    } finally {
+      setLoading(false);
     }
-
-    // Load all projects for assignment
-    const { data: allProjects } = await supabase
-      .from("projects")
-      .select("id, name, slug, icon")
-      .order("name");
-
-    setProjects(allProjects || []);
-    setLoading(false);
   }
 
-  async function saveSubcontractor(e: React.FormEvent) {
+  function toggleTrade(trade: string) {
+    setEditForm(prev => ({
+      ...prev,
+      trades: prev.trades.includes(trade)
+        ? prev.trades.filter(t => t !== trade)
+        : [...prev.trades, trade]
+    }));
+  }
+
+  async function savePartner(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
 
-    await supabase
-      .from("subcontractors")
+    const { error } = await supabase
+      .from("partners")
       .update({
         company_name: editForm.company_name,
-        trade: editForm.trade,
-        contact_name: editForm.contact_name || null,
-        contact_email: editForm.contact_email || null,
-        contact_phone: editForm.contact_phone || null,
-        street: editForm.street || null,
+        email: editForm.email || null,
+        phone: editForm.phone || null,
+        address: editForm.address || null,
         postal_code: editForm.postal_code || null,
         city: editForm.city || null,
-        tax_id: editForm.tax_id || null,
-        hourly_rate: editForm.hourly_rate ? parseFloat(editForm.hourly_rate) : null,
+        trades: editForm.trades,
         notes: editForm.notes || null,
-        status: editForm.status,
-        rating: editForm.rating ? parseFloat(editForm.rating) : null,
+        active: editForm.active,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", id);
 
-    setSubcontractor((prev) => (prev ? { 
-      ...prev, 
-      ...editForm,
-      hourly_rate: editForm.hourly_rate ? parseFloat(editForm.hourly_rate) : null,
-      rating: editForm.rating ? parseFloat(editForm.rating) : null,
-    } : null));
-    setShowEdit(false);
+    if (error) {
+      toast.error("Fehler beim Speichern");
+    } else {
+      toast.success("Gespeichert");
+      setShowEdit(false);
+      loadData();
+    }
+
     setSaving(false);
   }
 
-  async function deleteSubcontractor() {
-    if (!confirm("Subunternehmer wirklich löschen?")) return;
+  async function deletePartner() {
+    if (!confirm("Partner wirklich löschen? Alle Benutzer und Daten werden gelöscht.")) return;
 
-    await supabase.from("subcontractors").delete().eq("id", id);
-    router.push("/subcontractors");
+    const { error } = await supabase.from("partners").delete().eq("id", id);
+
+    if (error) {
+      toast.error("Fehler beim Löschen");
+    } else {
+      toast.success("Partner gelöscht");
+      router.push("/subcontractors");
+    }
   }
 
-  async function assignToProject(e: React.FormEvent) {
+  async function toggleActive() {
+    const newStatus = !partner?.active;
+    
+    const { error } = await supabase
+      .from("partners")
+      .update({ active: newStatus })
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Fehler");
+    } else {
+      toast.success(newStatus ? "Aktiviert" : "Deaktiviert");
+      loadData();
+    }
+  }
+
+  async function createUser(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedProjectId) return;
+    if (!userForm.name || !userForm.email || !userForm.password) {
+      toast.error("Name, E-Mail und Passwort erforderlich");
+      return;
+    }
 
     setSaving(true);
 
-    await supabase.from("project_subcontractors").insert({
-      project_id: selectedProjectId,
-      subcontractor_id: id,
-    });
+    try {
+      const res = await fetch("/api/partner/team", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          partnerId: id,
+          name: userForm.name,
+          email: userForm.email,
+          phone: userForm.phone,
+          role: userForm.role,
+          password: userForm.password,
+        }),
+      });
 
-    setShowAssign(false);
-    setSelectedProjectId("");
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || "Fehler beim Erstellen");
+      } else {
+        toast.success("Benutzer erstellt");
+        setShowAddUser(false);
+        setUserForm({ name: "", email: "", phone: "", role: "worker", password: "" });
+        loadData();
+      }
+    } catch {
+      toast.error("Netzwerk-Fehler");
+    }
+
     setSaving(false);
-    await loadData();
   }
 
-  async function removeFromProject(projectId: string) {
-    if (!confirm("Zuordnung wirklich entfernen?")) return;
+  async function deleteUser(userId: string, userName: string) {
+    if (!confirm(`${userName} wirklich löschen?`)) return;
 
-    await supabase
-      .from("project_subcontractors")
-      .delete()
-      .eq("project_id", projectId)
-      .eq("subcontractor_id", id);
+    try {
+      const res = await fetch("/api/partner/team", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          userId,
+          partnerId: id,
+        }),
+      });
 
-    await loadData();
+      if (!res.ok) {
+        toast.error("Fehler beim Löschen");
+      } else {
+        toast.success("Benutzer gelöscht");
+        loadData();
+      }
+    } catch {
+      toast.error("Netzwerk-Fehler");
+    }
   }
+
+  const jobStatusColors: Record<string, string> = {
+    open: "bg-yellow-500/20 text-yellow-400",
+    accepted: "bg-blue-500/20 text-blue-400",
+    in_progress: "bg-orange-500/20 text-orange-400",
+    completed: "bg-green-500/20 text-green-400",
+    declined: "bg-red-500/20 text-red-400",
+  };
 
   if (loading) {
     return (
-      <div className="p-8 text-center">
-        <Spinner className="mx-auto" />
-        <p className="text-neutral-500 mt-4">Lade Subunternehmer...</p>
+      <div className="flex items-center justify-center h-64">
+        <Spinner />
       </div>
     );
   }
 
-  if (!subcontractor) {
+  if (!partner) {
     return (
       <div className="p-12 text-center text-neutral-500">
-        <span className="text-4xl mb-4 block">❌</span>
-        Subunternehmer nicht gefunden
+        <Building2 className="w-16 h-16 mx-auto mb-4 text-neutral-600" />
+        Partner nicht gefunden
       </div>
     );
   }
 
-  // Filter out already assigned projects
-  const availableProjects = projects.filter(
-    (p) => !assignedProjects.some((ap) => ap.id === p.id)
-  );
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <button
@@ -258,199 +335,198 @@ export default function SubcontractorDetailPage({ params }: Props) {
           <ChevronLeft className="w-5 h-5" />
           Zurück zur Liste
         </button>
-        <div className="flex items-center gap-3">
-          <span className={`badge ${statusColors[subcontractor.status || "active"]}`}>
-            {statusLabels[subcontractor.status || "active"]}
-          </span>
-          {subcontractor.rating && (
-            <span className="flex items-center gap-1 text-yellow-400">
-              <Star className="w-4 h-4 fill-current" />
-              {subcontractor.rating.toFixed(1)}
-            </span>
-          )}
+        <div className="flex items-center gap-2">
+          <button onClick={toggleActive} className={`btn-secondary text-sm ${partner.active ? '' : 'text-green-400'}`}>
+            {partner.active ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
+            {partner.active ? "Deaktivieren" : "Aktivieren"}
+          </button>
+          <button onClick={() => setShowEdit(true)} className="btn-secondary text-sm">
+            <Pencil className="w-4 h-4" />
+            Bearbeiten
+          </button>
+          <button onClick={deletePartner} className="btn-secondary text-sm text-red-400 hover:text-red-300">
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
-      {/* Main Info Card */}
+      {/* Main Info */}
       <div className="card p-6">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
-          <div>
-            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-              <Wrench className="w-7 h-7 text-orange-400" />
-              {subcontractor.company_name}
-            </h2>
-            <span className="inline-block mt-2 text-sm px-2 py-1 rounded bg-neutral-800 text-neutral-300">
-              {tradeLabels[subcontractor.trade]}
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setShowEdit(true)} className="btn btn-secondary">
-              <Pencil className="w-4 h-4" />
-              Bearbeiten
-            </button>
-            <button
-              onClick={deleteSubcontractor}
-              className="btn btn-ghost hover:!bg-red-900/30 hover:!text-red-400"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
+          <div className="flex items-center gap-4">
+            {partner.logo_url ? (
+              <img src={partner.logo_url} alt="" className="w-16 h-16 rounded-lg object-contain bg-white p-2" />
+            ) : (
+              <div className="w-16 h-16 rounded-lg bg-[#111] flex items-center justify-center">
+                <Building2 className="w-8 h-8 text-neutral-500" />
+              </div>
+            )}
+            <div>
+              <h1 className="text-2xl font-bold text-white">{partner.company_name}</h1>
+              <span className={`inline-flex items-center gap-1 text-sm mt-1 ${partner.active ? 'text-green-400' : 'text-neutral-500'}`}>
+                {partner.active ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                {partner.active ? "Aktiv" : "Inaktiv"}
+              </span>
+            </div>
           </div>
         </div>
 
         <div className="grid md:grid-cols-2 gap-6">
-          {/* Contact Info */}
+          {/* Contact */}
           <div className="space-y-3">
-            <h3 className="font-medium text-neutral-400 text-sm uppercase tracking-wide">
-              Ansprechpartner
-            </h3>
-            {subcontractor.contact_name && (
-              <p className="text-white">{subcontractor.contact_name}</p>
-            )}
-            {subcontractor.contact_email && (
-              <a
-                href={`mailto:${subcontractor.contact_email}`}
-                className="flex items-center gap-3 text-white hover:text-orange-400 transition-colors"
-              >
+            <h3 className="font-medium text-neutral-400 text-sm uppercase">Kontakt</h3>
+            {partner.email && (
+              <a href={`mailto:${partner.email}`} className="flex items-center gap-3 text-white hover:text-[#fa432a]">
                 <Mail className="w-5 h-5 text-neutral-500" />
-                {subcontractor.contact_email}
+                {partner.email}
               </a>
             )}
-            {subcontractor.contact_phone && (
-              <a
-                href={`tel:${subcontractor.contact_phone}`}
-                className="flex items-center gap-3 text-white hover:text-orange-400 transition-colors"
-              >
+            {partner.phone && (
+              <a href={`tel:${partner.phone}`} className="flex items-center gap-3 text-white hover:text-[#fa432a]">
                 <Phone className="w-5 h-5 text-neutral-500" />
-                {subcontractor.contact_phone}
+                {partner.phone}
               </a>
             )}
-          </div>
-
-          {/* Address & Details */}
-          <div className="space-y-3">
-            <h3 className="font-medium text-neutral-400 text-sm uppercase tracking-wide">
-              Details
-            </h3>
-            {(subcontractor.street || subcontractor.city) && (
+            {(partner.address || partner.city) && (
               <div className="flex items-start gap-3 text-white">
                 <MapPin className="w-5 h-5 text-neutral-500 mt-0.5" />
                 <div>
-                  {subcontractor.street && <div>{subcontractor.street}</div>}
-                  <div>
-                    {subcontractor.postal_code && `${subcontractor.postal_code} `}
-                    {subcontractor.city}
-                  </div>
+                  {partner.address && <div>{partner.address}</div>}
+                  <div>{partner.postal_code} {partner.city}</div>
                 </div>
               </div>
             )}
-            {subcontractor.hourly_rate && (
-              <p className="text-green-400 font-medium">
-                {subcontractor.hourly_rate.toLocaleString("de-DE", {
-                  style: "currency",
-                  currency: "EUR",
-                })}{" "}
-                / Stunde
-              </p>
-            )}
           </div>
-        </div>
 
-        {/* Notes */}
-        {subcontractor.notes && (
-          <div className="mt-6 pt-6 border-t border-[#262626]">
-            <h3 className="font-medium text-neutral-400 text-sm uppercase tracking-wide mb-2">
-              Notizen
+          {/* Trades */}
+          <div className="space-y-3">
+            <h3 className="font-medium text-neutral-400 text-sm uppercase flex items-center gap-2">
+              <Wrench className="w-4 h-4" />
+              Gewerke
             </h3>
-            <p className="text-neutral-300 whitespace-pre-wrap">{subcontractor.notes}</p>
+            <div className="flex flex-wrap gap-2">
+              {(partner.trades || []).length > 0 ? (
+                partner.trades.map((trade) => {
+                  const t = tradeOptions.find(o => o.value === trade);
+                  return (
+                    <span key={trade} className="px-3 py-1.5 rounded-lg bg-[#fa432a]/20 text-[#fa432a] text-sm">
+                      {t?.label || trade}
+                    </span>
+                  );
+                })
+              ) : (
+                <span className="text-neutral-500 text-sm">Keine Gewerke zugewiesen</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {partner.notes && (
+          <div className="mt-6 pt-6 border-t border-neutral-800">
+            <h3 className="font-medium text-neutral-400 text-sm uppercase mb-2">Notizen</h3>
+            <p className="text-neutral-300 whitespace-pre-wrap">{partner.notes}</p>
           </div>
         )}
       </div>
 
-      {/* Assigned Projects */}
+      {/* Team */}
       <div className="card p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <Briefcase className="w-5 h-5 text-blue-400" />
-            Zugewiesene Projekte ({assignedProjects.length})
+            <Users className="w-5 h-5 text-[#fa432a]" />
+            Team ({users.length})
           </h3>
-          {availableProjects.length > 0 && (
-            <button onClick={() => setShowAssign(true)} className="btn btn-primary btn-sm">
-              <Plus className="w-4 h-4" />
-              Zuweisen
-            </button>
-          )}
+          <button onClick={() => setShowAddUser(true)} className="btn-primary btn-sm flex items-center gap-2">
+            <UserPlus className="w-4 h-4" />
+            Benutzer anlegen
+          </button>
         </div>
 
-        {assignedProjects.length === 0 ? (
-          <p className="text-neutral-500 text-center py-8">Noch keine Projekte zugewiesen</p>
+        {users.length === 0 ? (
+          <p className="text-neutral-500 text-center py-8">Noch keine Benutzer</p>
         ) : (
-          <div className="space-y-2">
-            {assignedProjects.map((project) => (
-              <div
-                key={project.id}
-                className="flex items-center justify-between p-3 rounded-lg bg-[#111] hover:bg-[#1a1a1a] transition-colors"
-              >
-                <div
-                  className="flex items-center gap-3 cursor-pointer flex-1"
-                  onClick={() => router.push(`/projects/${project.slug}`)}
-                >
-                  {project.icon && <span>{project.icon}</span>}
-                  <span className="font-medium text-white">{project.name}</span>
-                </div>
-                <button
-                  onClick={() => removeFromProject(project.id)}
-                  className="btn btn-ghost btn-sm hover:!text-red-400"
-                >
-                  <XCircle className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
+          <div className="overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-neutral-800">
+                  <th className="text-left text-xs text-neutral-500 uppercase py-2 font-medium">Name</th>
+                  <th className="text-left text-xs text-neutral-500 uppercase py-2 font-medium hidden sm:table-cell">E-Mail</th>
+                  <th className="text-left text-xs text-neutral-500 uppercase py-2 font-medium hidden md:table-cell">Rolle</th>
+                  <th className="text-left text-xs text-neutral-500 uppercase py-2 font-medium">Status</th>
+                  <th className="w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <tr key={user.id} className="border-b border-neutral-800/50">
+                    <td className="py-3">
+                      <span className="font-medium text-white">{user.display_name}</span>
+                    </td>
+                    <td className="py-3 hidden sm:table-cell">
+                      <span className="text-neutral-400 text-sm">{user.email}</span>
+                    </td>
+                    <td className="py-3 hidden md:table-cell">
+                      <span className={`text-xs px-2 py-0.5 rounded ${
+                        user.role === 'admin' ? 'bg-[#fa432a]/20 text-[#fa432a]' : 'bg-neutral-800 text-neutral-400'
+                      }`}>
+                        {user.role === 'admin' ? 'Admin' : 'Mitarbeiter'}
+                      </span>
+                    </td>
+                    <td className="py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded ${
+                        user.active ? 'bg-green-500/20 text-green-400' : 'bg-neutral-500/20 text-neutral-400'
+                      }`}>
+                        {user.active ? 'Aktiv' : 'Inaktiv'}
+                      </span>
+                    </td>
+                    <td className="py-3">
+                      <button
+                        onClick={() => deleteUser(user.id, user.display_name)}
+                        className="p-1 text-neutral-500 hover:text-red-400"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
 
-      {/* Appointments */}
+      {/* Jobs */}
       <div className="card p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-green-400" />
-            Termine ({appointments.length})
+            <Briefcase className="w-5 h-5 text-[#fa432a]" />
+            Aufträge ({jobs.length})
           </h3>
         </div>
 
-        {appointments.length === 0 ? (
-          <p className="text-neutral-500 text-center py-8">Keine Termine vorhanden</p>
+        {jobs.length === 0 ? (
+          <p className="text-neutral-500 text-center py-8">Noch keine Aufträge</p>
         ) : (
           <div className="space-y-2">
-            {appointments.map((appt) => (
-              <div
-                key={appt.id}
-                className="flex items-center gap-4 p-3 rounded-lg bg-[#111]"
-              >
-                {appt.status === "completed" ? (
-                  <CheckCircle className="w-5 h-5 text-green-400" />
-                ) : appt.status === "cancelled" ? (
-                  <XCircle className="w-5 h-5 text-red-400" />
-                ) : (
-                  <Clock className="w-5 h-5 text-yellow-400" />
-                )}
-                <div className="flex-1">
-                  <span className="font-medium text-white">{appt.title}</span>
-                  <p className="text-sm text-neutral-500">
-                    {formatDate(appt.start_time)}
-                  </p>
+            {jobs.map((job) => (
+              <div key={job.id} className="flex items-center justify-between p-3 rounded-lg bg-[#111]">
+                <div>
+                  <span className="font-medium text-white">{job.title}</span>
+                  {job.project && (
+                    <p className="text-sm text-neutral-500">{job.project.name}</p>
+                  )}
                 </div>
-                <span
-                  className={`badge ${
-                    appt.status === "completed"
-                      ? "badge-success"
-                      : appt.status === "cancelled"
-                      ? "badge-error"
-                      : "badge-warning"
-                  }`}
-                >
-                  {appt.status}
-                </span>
+                <div className="flex items-center gap-3">
+                  {job.scheduled_date && (
+                    <span className="text-xs text-neutral-500 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {formatDate(job.scheduled_date)}
+                    </span>
+                  )}
+                  <span className={`text-xs px-2 py-0.5 rounded ${jobStatusColors[job.status] || 'bg-neutral-800 text-neutral-400'}`}>
+                    {job.status}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
@@ -459,149 +535,189 @@ export default function SubcontractorDetailPage({ params }: Props) {
 
       {/* Metadata */}
       <div className="card p-4 bg-[#111] text-sm text-neutral-500">
-        <div className="flex flex-wrap gap-4 sm:gap-6">
-          <span>Erstellt: {formatDate(subcontractor.created_at)}</span>
-          <span>Aktualisiert: {formatDate(subcontractor.updated_at)}</span>
-          {subcontractor.tax_id && <span>USt-ID: {subcontractor.tax_id}</span>}
+        <div className="flex flex-wrap gap-4">
+          <span>Erstellt: {formatDate(partner.created_at)}</span>
+          <span>Aktualisiert: {formatDate(partner.updated_at)}</span>
         </div>
       </div>
 
       {/* Edit Modal */}
-      <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Subunternehmer bearbeiten">
-        <form onSubmit={saveSubcontractor} className="space-y-4 max-h-[70vh] overflow-y-auto">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="form-label">Firmenname *</label>
-              <input
-                value={editForm.company_name}
-                onChange={(e) => setEditForm({ ...editForm, company_name: e.target.value })}
-                className="input"
-                required
-              />
-            </div>
-            <div>
-              <label className="form-label">Gewerk</label>
-              <select
-                value={editForm.trade}
-                onChange={(e) => setEditForm({ ...editForm, trade: e.target.value as TradeType })}
-                className="input"
-              >
-                {Object.entries(tradeLabels).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="form-label">Status</label>
-              <select
-                value={editForm.status}
-                onChange={(e) => setEditForm({ ...editForm, status: e.target.value as typeof editForm.status })}
-                className="input"
-              >
-                {Object.entries(statusLabels).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="form-label">Stundensatz (€)</label>
-              <input
-                type="number"
-                step="0.01"
-                value={editForm.hourly_rate}
-                onChange={(e) => setEditForm({ ...editForm, hourly_rate: e.target.value })}
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="form-label">Bewertung (1-5)</label>
-              <input
-                type="number"
-                min="1"
-                max="5"
-                step="0.1"
-                value={editForm.rating}
-                onChange={(e) => setEditForm({ ...editForm, rating: e.target.value })}
-                className="input"
-              />
-            </div>
+      <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Partner bearbeiten">
+        <form onSubmit={savePartner} className="space-y-4 max-h-[70vh] overflow-y-auto">
+          <div>
+            <label className="block text-sm text-neutral-400 mb-1">Firmenname *</label>
+            <input
+              type="text"
+              value={editForm.company_name}
+              onChange={(e) => setEditForm({ ...editForm, company_name: e.target.value })}
+              className="input w-full"
+              required
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="form-label">Ansprechpartner</label>
-              <input
-                value={editForm.contact_name}
-                onChange={(e) => setEditForm({ ...editForm, contact_name: e.target.value })}
-                className="input"
-              />
-            </div>
             <div>
-              <label className="form-label">E-Mail</label>
+              <label className="block text-sm text-neutral-400 mb-1">E-Mail</label>
               <input
                 type="email"
-                value={editForm.contact_email}
-                onChange={(e) => setEditForm({ ...editForm, contact_email: e.target.value })}
-                className="input"
+                value={editForm.email}
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                className="input w-full"
               />
             </div>
             <div>
-              <label className="form-label">Telefon</label>
+              <label className="block text-sm text-neutral-400 mb-1">Telefon</label>
               <input
-                value={editForm.contact_phone}
-                onChange={(e) => setEditForm({ ...editForm, contact_phone: e.target.value })}
-                className="input"
+                type="tel"
+                value={editForm.phone}
+                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                className="input w-full"
               />
             </div>
           </div>
 
           <div>
-            <label className="form-label">Notizen</label>
+            <label className="block text-sm text-neutral-400 mb-1">Adresse</label>
+            <input
+              type="text"
+              value={editForm.address}
+              onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+              className="input w-full"
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm text-neutral-400 mb-1">PLZ</label>
+              <input
+                type="text"
+                value={editForm.postal_code}
+                onChange={(e) => setEditForm({ ...editForm, postal_code: e.target.value })}
+                className="input w-full"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm text-neutral-400 mb-1">Ort</label>
+              <input
+                type="text"
+                value={editForm.city}
+                onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
+                className="input w-full"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-neutral-400 mb-2">Gewerke</label>
+            <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+              {tradeOptions.map((t) => (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => toggleTrade(t.value)}
+                  className={`p-2 rounded text-left text-sm transition-colors ${
+                    editForm.trades.includes(t.value)
+                      ? "bg-[#fa432a]/20 border border-[#fa432a] text-white"
+                      : "bg-[#111] border border-transparent text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-neutral-400 mb-1">Notizen</label>
             <textarea
               value={editForm.notes}
               onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
               rows={3}
-              className="input"
+              className="input w-full"
             />
           </div>
 
           <div className="flex gap-3 pt-4">
-            <button type="submit" disabled={saving} className="btn btn-primary flex-1">
-              {saving ? <Spinner className="!w-5 !h-5" /> : null}
-              {saving ? "Speichern..." : "Speichern"}
-            </button>
-            <button type="button" onClick={() => setShowEdit(false)} className="btn btn-secondary flex-1">
+            <button type="button" onClick={() => setShowEdit(false)} className="btn-secondary flex-1">
               Abbrechen
+            </button>
+            <button type="submit" disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
+              {saving && <Spinner className="w-5 h-5" />}
+              Speichern
             </button>
           </div>
         </form>
       </Modal>
 
-      {/* Assign Project Modal */}
-      <Modal open={showAssign} onClose={() => setShowAssign(false)} title="Projekt zuweisen">
-        <form onSubmit={assignToProject} className="space-y-4">
+      {/* Add User Modal */}
+      <Modal open={showAddUser} onClose={() => setShowAddUser(false)} title="Benutzer anlegen">
+        <form onSubmit={createUser} className="space-y-4">
           <div>
-            <label className="form-label">Projekt auswählen</label>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="input"
+            <label className="block text-sm text-neutral-400 mb-1">Name *</label>
+            <input
+              type="text"
+              value={userForm.name}
+              onChange={(e) => setUserForm({ ...userForm, name: e.target.value })}
+              className="input w-full"
+              placeholder="Max Mustermann"
               required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-neutral-400 mb-1">E-Mail *</label>
+            <input
+              type="email"
+              value={userForm.email}
+              onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+              className="input w-full"
+              placeholder="max@firma.de"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-neutral-400 mb-1">Telefon</label>
+            <input
+              type="tel"
+              value={userForm.phone}
+              onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })}
+              className="input w-full"
+              placeholder="+49 ..."
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-neutral-400 mb-1">Rolle</label>
+            <select
+              value={userForm.role}
+              onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}
+              className="input w-full"
             >
-              <option value="">-- Projekt wählen --</option>
-              {availableProjects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
+              <option value="worker">Mitarbeiter</option>
+              <option value="admin">Administrator</option>
             </select>
           </div>
 
+          <div>
+            <label className="block text-sm text-neutral-400 mb-1">Passwort *</label>
+            <input
+              type="password"
+              value={userForm.password}
+              onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+              className="input w-full"
+              placeholder="Mindestens 6 Zeichen"
+              required
+            />
+          </div>
+
           <div className="flex gap-3 pt-4">
-            <button type="submit" disabled={saving || !selectedProjectId} className="btn btn-primary flex-1">
-              {saving ? <Spinner className="!w-5 !h-5" /> : <Plus className="w-4 h-4" />}
-              {saving ? "Zuweisen..." : "Zuweisen"}
-            </button>
-            <button type="button" onClick={() => setShowAssign(false)} className="btn btn-secondary flex-1">
+            <button type="button" onClick={() => setShowAddUser(false)} className="btn-secondary flex-1">
               Abbrechen
+            </button>
+            <button type="submit" disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
+              {saving && <Spinner className="w-5 h-5" />}
+              Anlegen
             </button>
           </div>
         </form>

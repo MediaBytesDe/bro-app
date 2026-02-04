@@ -14,6 +14,7 @@ import {
   MapPin
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { getTradeLabel } from "@/lib/trades";
 
 interface Job {
   id: string;
@@ -26,8 +27,10 @@ interface Job {
   project: {
     name: string;
     customer: {
-      name: string;
+      first_name: string;
+      last_name: string;
       city: string;
+      postal_code: string;
     };
   };
 }
@@ -53,18 +56,25 @@ export default function PartnerDashboardPage() {
   }, []);
 
   async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
 
-    // Get partner user
-    const { data: pu } = await supabase
-      .from("partner_users")
-      .select("*, partner:partners(*)")
-      .eq("auth_user_id", user.id)
-      .single();
+      // Get partner user
+      const { data: pu } = await supabase
+        .from("partner_users")
+        .select("*, partner:partners(*)")
+        .eq("auth_user_id", user.id)
+        .single();
 
-    if (!pu) return;
-    setPartnerUser(pu);
+      if (!pu) {
+        setLoading(false);
+        return;
+      }
+      setPartnerUser(pu);
 
     const partnerId = pu.partner_id;
     const isAdmin = pu.role === 'admin';
@@ -76,7 +86,7 @@ export default function PartnerDashboardPage() {
         id, title, description, trade, scheduled_date, scheduled_time_start, status,
         project:projects (
           name,
-          customer:customers (name, city)
+          customer:customers (first_name, last_name, city, postal_code)
         )
       `)
       .order("scheduled_date", { ascending: true });
@@ -92,10 +102,19 @@ export default function PartnerDashboardPage() {
     const { data: jobs } = await jobsQuery;
 
     if (jobs) {
-      // Calculate stats
+      // Filter offene Jobs nach Partner-Gewerken
+      const partnerTrades = pu.partner?.trades || [];
+      const relevantOpenJobs = jobs.filter(j => {
+        if (j.status !== 'open') return false;
+        if (!j.trade) return true; // Kein Gewerk = für alle
+        return partnerTrades.includes(j.trade);
+      });
+      
       const partnerJobs = jobs.filter(j => j.status !== 'open');
+      
+      // Calculate stats
       setStats({
-        open: jobs.filter(j => j.status === 'open').length,
+        open: relevantOpenJobs.length,
         accepted: partnerJobs.filter(j => j.status === 'accepted').length,
         inProgress: partnerJobs.filter(j => j.status === 'in_progress').length,
         completed: partnerJobs.filter(j => j.status === 'completed').length,
@@ -105,7 +124,7 @@ export default function PartnerDashboardPage() {
       const today = new Date();
       const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
       setUpcomingJobs(
-        jobs
+        partnerJobs
           .filter(j => 
             ['accepted', 'in_progress'].includes(j.status) &&
             j.scheduled_date &&
@@ -114,11 +133,14 @@ export default function PartnerDashboardPage() {
           .slice(0, 5)
       );
 
-      // Open jobs (pool)
-      setOpenJobs(jobs.filter(j => j.status === 'open').slice(0, 5));
+      // Open jobs (pool) - gefiltert nach Gewerk
+      setOpenJobs(relevantOpenJobs.slice(0, 5));
     }
-
-    setLoading(false);
+    } catch (err) {
+      console.error("Error loading dashboard:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (loading) {
@@ -153,7 +175,7 @@ export default function PartnerDashboardPage() {
           icon={ClipboardList}
           label="Angenommen"
           value={stats.accepted}
-          color="blue"
+          color="red"
         />
         <StatCard
           icon={Clock}
@@ -174,10 +196,10 @@ export default function PartnerDashboardPage() {
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-blue-400" />
+              <Calendar className="w-5 h-5 text-[#fa432a]" />
               Anstehende Termine
             </h2>
-            <Link href="/partner/auftraege?filter=upcoming" className="text-sm text-blue-400 hover:underline flex items-center gap-1">
+            <Link href="/partner/auftraege?filter=upcoming" className="text-sm text-[#fa432a] hover:underline flex items-center gap-1">
               Alle <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -199,7 +221,7 @@ export default function PartnerDashboardPage() {
                     <div>
                       <h3 className="font-medium text-white">{job.title}</h3>
                       <p className="text-sm text-neutral-400 mt-1">
-                        {job.project?.customer?.name} · {job.project?.name}
+                        {job.project?.customer?.first_name} {job.project?.customer?.last_name} · {job.project?.name}
                       </p>
                       <div className="flex items-center gap-3 mt-2 text-xs text-neutral-500">
                         <span className="flex items-center gap-1">
@@ -230,7 +252,7 @@ export default function PartnerDashboardPage() {
               <AlertCircle className="w-5 h-5 text-yellow-400" />
               Neue Aufträge
             </h2>
-            <Link href="/partner/auftraege?filter=open" className="text-sm text-blue-400 hover:underline flex items-center gap-1">
+            <Link href="/partner/auftraege?filter=open" className="text-sm text-[#fa432a] hover:underline flex items-center gap-1">
               Alle <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -254,12 +276,12 @@ export default function PartnerDashboardPage() {
                         <h3 className="font-medium text-white">{job.title}</h3>
                         {job.trade && (
                           <span className="text-xs px-2 py-0.5 bg-neutral-800 text-neutral-400 rounded">
-                            {job.trade}
+                            {getTradeLabel(job.trade)}
                           </span>
                         )}
                       </div>
                       <p className="text-sm text-neutral-400 mt-1">
-                        {job.project?.customer?.city || "Ostfriesland"}
+                        {job.project?.customer?.postal_code} {job.project?.customer?.city || "Ostfriesland"}
                       </p>
                       {job.scheduled_date && (
                         <p className="text-xs text-neutral-500 mt-2">
@@ -289,7 +311,7 @@ function StatCard({ icon: Icon, label, value, color }: {
 }) {
   const colors: Record<string, string> = {
     yellow: "from-yellow-500/20 to-orange-500/20 text-yellow-400",
-    blue: "from-blue-500/20 to-cyan-500/20 text-blue-400",
+    red: "from-[#fa432a]/20 to-orange-500/20 text-[#fa432a]",
     orange: "from-orange-500/20 to-red-500/20 text-orange-400",
     green: "from-green-500/20 to-emerald-500/20 text-green-400",
   };
@@ -306,7 +328,7 @@ function StatCard({ icon: Icon, label, value, color }: {
 function JobStatusBadge({ status }: { status: string }) {
   const statusMap: Record<string, { label: string; class: string }> = {
     open: { label: "Offen", class: "bg-yellow-500/20 text-yellow-400" },
-    accepted: { label: "Angenommen", class: "bg-blue-500/20 text-blue-400" },
+    accepted: { label: "Angenommen", class: "bg-[#fa432a]/20 text-[#fa432a]" },
     in_progress: { label: "In Arbeit", class: "bg-orange-500/20 text-orange-400" },
     completed: { label: "Erledigt", class: "bg-green-500/20 text-green-400" },
     declined: { label: "Abgelehnt", class: "bg-red-500/20 text-red-400" },

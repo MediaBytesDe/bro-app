@@ -25,10 +25,10 @@ Drei Benutzergruppen mit jeweils eigener Ansicht:
 | `/portal` | Dashboard mit Übersicht | ✅ Existiert |
 | `/portal/projekte` | Projektliste | ✅ Existiert |
 | `/portal/projekte/[slug]` | Projektdetails + Status-Tracker | 🔄 Erweitern |
-| `/portal/termine` | Termine sehen + selbst buchen | ❌ Neu |
-| `/portal/dokumente` | Upload + Download | ❌ Neu |
-| `/portal/nachrichten` | Chat mit BROjekt | ❌ Neu |
-| `/portal/zahlungen` | Zahlungsstatus | ❌ Neu |
+| `/portal/termine` | Termine sehen + selbst buchen | ✅ Fertig |
+| `/portal/dokumente` | Upload + Download | ✅ Fertig |
+| `/portal/nachrichten` | Chat mit BROjekt | ✅ Fertig |
+| `/portal/zahlungen` | Zahlungsstatus | ✅ Fertig |
 | `/portal/angebote` | Angebotsliste + PDF | ✅ Existiert |
 
 ### Features
@@ -65,18 +65,18 @@ Visueller Projektfortschritt:
 
 ### Seiten
 
-| Route | Beschreibung | Berechtigung |
-|-------|--------------|--------------|
-| `/partner` | Dashboard | Alle |
-| `/partner/auftraege` | Auftragspool + Meine | Alle |
-| `/partner/auftraege/[id]` | Auftragsdetails | Zugewiesene |
-| `/partner/auftraege/[id]/rapport` | Fertigmeldung | Zugewiesene |
-| `/partner/auftraege/[id]/chat` | Projekt-Chat | Zugewiesene |
-| `/partner/kalender` | Team-Kalender | Alle |
-| `/partner/rechnungen` | Rechnungen hochladen | Alle |
-| `/partner/team` | Mitarbeiter verwalten | Nur Admin |
-| `/partner/team/einladen` | Mitarbeiter einladen | Nur Admin |
-| `/partner/einstellungen` | Firmenprofil | Nur Admin |
+| Route | Beschreibung | Berechtigung | Status |
+|-------|--------------|--------------|--------|
+| `/partner` | Dashboard | Alle | ✅ Fertig |
+| `/partner/auftraege` | Auftragspool + Meine | Alle | ✅ Fertig |
+| `/partner/auftraege/[id]` | Auftragsdetails | Zugewiesene | ✅ Fertig |
+| `/partner/auftraege/[id]/rapport` | Fertigmeldung | Zugewiesene | ✅ Fertig |
+| `/partner/auftraege/[id]/chat` | Projekt-Chat | Zugewiesene | ✅ Fertig |
+| `/partner/kalender` | Team-Kalender | Alle | ✅ Fertig |
+| `/partner/rechnungen` | Rechnungen hochladen | Alle | ✅ Fertig |
+| `/partner/team` | Mitarbeiter verwalten | Nur Admin | ✅ Fertig |
+| `/partner/team/einladen` | Mitarbeiter einladen | Nur Admin | 🔄 Braucht E-Mail |
+| `/partner/einstellungen` | Firmenprofil | Nur Admin | ❌ TODO |
 
 ### Rollen
 

@@ -12,10 +12,25 @@ import {
   X,
   PenTool,
   CheckCircle,
-  Upload,
-  RotateCcw
+  Plus,
+  RotateCcw,
+  BookOpen,
+  Calendar,
+  Trash2,
+  Edit
 } from "lucide-react";
 import { toast } from "sonner";
+
+interface DiaryEntry {
+  id: string;
+  entry_date: string;
+  text: string;
+  photos: { url: string; caption: string }[];
+  created_at: string;
+  partner_user?: {
+    display_name: string;
+  };
+}
 
 export default function RapportPage() {
   const router = useRouter();
@@ -27,14 +42,22 @@ export default function RapportPage() {
   const [job, setJob] = useState<any>(null);
   const [partnerUser, setPartnerUser] = useState<any>(null);
 
-  // Form state
-  const [reportText, setReportText] = useState("");
-  const [workDone, setWorkDone] = useState("");
-  const [issues, setIssues] = useState("");
-  const [photos, setPhotos] = useState<{ url: string; caption: string }[]>([]);
+  // Tagebuch-Einträge
+  const [entries, setEntries] = useState<DiaryEntry[]>([]);
+  const [showEntryForm, setShowEntryForm] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<string | null>(null);
+  const [entryForm, setEntryForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    text: '',
+    photos: [] as { url: string; caption: string }[]
+  });
+
+  // Abschluss-Rapport
+  const [showFinalize, setShowFinalize] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [showSignature, setShowSignature] = useState(false);
   const [signatureData, setSignatureData] = useState<string | null>(null);
+  const [finalReport, setFinalReport] = useState<any>(null);
 
   const signatureRef = useRef<SignatureCanvas>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -46,58 +69,72 @@ export default function RapportPage() {
   }, [jobId]);
 
   async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
 
-    const { data: pu } = await supabase
-      .from("partner_users")
-      .select("*, partner:partners(*)")
-      .eq("auth_user_id", user.id)
-      .single();
+      const { data: pu } = await supabase
+        .from("partner_users")
+        .select("*, partner:partners(*)")
+        .eq("auth_user_id", user.id)
+        .single();
 
-    if (!pu) return;
-    setPartnerUser(pu);
+      if (!pu) { setLoading(false); return; }
+      setPartnerUser(pu);
 
-    const { data: jobData } = await supabase
-      .from("partner_jobs")
-      .select(`
-        *,
-        project:projects (
-          name,
-          customer:customers (name)
-        )
-      `)
-      .eq("id", jobId)
-      .single();
+      const { data: jobData } = await supabase
+        .from("partner_jobs")
+        .select(`
+          *,
+          project:projects (
+            name,
+            customer:customers (first_name, last_name)
+          )
+        `)
+        .eq("id", jobId)
+        .single();
 
-    if (!jobData || jobData.status !== "in_progress") {
-      router.push(`/partner/auftraege/${jobId}`);
-      return;
-    }
-
-    setJob(jobData);
-    setCustomerName(jobData.project?.customer?.name || "");
-
-    // Load existing draft
-    const { data: existingReport } = await supabase
-      .from("job_reports")
-      .select("*")
-      .eq("job_id", jobId)
-      .eq("status", "draft")
-      .single();
-
-    if (existingReport) {
-      setReportText(existingReport.report_text || "");
-      setWorkDone(existingReport.work_done || "");
-      setIssues(existingReport.issues || "");
-      setPhotos(existingReport.photos || []);
-      if (existingReport.customer_signature_url) {
-        setSignatureData(existingReport.customer_signature_url);
+      if (!jobData) {
+        setLoading(false);
+        router.push(`/partner/auftraege/${jobId}`);
+        return;
       }
-      setCustomerName(existingReport.customer_name || jobData.project?.customer?.name || "");
-    }
 
-    setLoading(false);
+      setJob(jobData);
+      const customerFullName = jobData.project?.customer 
+        ? `${jobData.project.customer.first_name} ${jobData.project.customer.last_name}`
+        : "";
+      setCustomerName(customerFullName);
+
+      // Tagebuch-Einträge laden
+      const { data: diaryEntries } = await supabase
+        .from("job_diary_entries")
+        .select(`
+          *,
+          partner_user:partner_users (display_name)
+        `)
+        .eq("job_id", jobId)
+        .order("entry_date", { ascending: false });
+
+      setEntries(diaryEntries || []);
+
+      // Existierenden Abschluss-Rapport laden
+      const { data: existingReport } = await supabase
+        .from("job_reports")
+        .select("*")
+        .eq("job_id", jobId)
+        .single();
+
+      if (existingReport) {
+        setFinalReport(existingReport);
+        setSignatureData(existingReport.customer_signature_url);
+        setCustomerName(existingReport.customer_name || customerFullName);
+      }
+    } catch (err) {
+      console.error("Error loading rapport:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -105,15 +142,17 @@ export default function RapportPage() {
     if (!files?.length) return;
 
     for (const file of Array.from(files)) {
-      // Compress and upload
-      const fileName = `reports/${jobId}/${Date.now()}_${file.name}`;
+      const sanitizedName = file.name
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9.-]/g, '_');
+      const fileName = `diary/${jobId}/${Date.now()}_${sanitizedName}`;
       
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from("documents")
         .upload(fileName, file, { contentType: file.type });
 
       if (error) {
-        toast.error(`Fehler beim Hochladen: ${file.name}`);
+        toast.error(`Fehler: ${file.name}`);
         continue;
       }
 
@@ -121,7 +160,10 @@ export default function RapportPage() {
         .from("documents")
         .getPublicUrl(fileName);
 
-      setPhotos(prev => [...prev, { url: urlData.publicUrl, caption: "" }]);
+      setEntryForm(prev => ({
+        ...prev,
+        photos: [...prev.photos, { url: urlData.publicUrl, caption: "" }]
+      }));
     }
 
     toast.success("Fotos hochgeladen");
@@ -129,7 +171,92 @@ export default function RapportPage() {
   }
 
   function removePhoto(index: number) {
-    setPhotos(prev => prev.filter((_, i) => i !== index));
+    setEntryForm(prev => ({
+      ...prev,
+      photos: prev.photos.filter((_, i) => i !== index)
+    }));
+  }
+
+  function startNewEntry() {
+    setEditingEntry(null);
+    setEntryForm({
+      date: new Date().toISOString().split('T')[0],
+      text: '',
+      photos: []
+    });
+    setShowEntryForm(true);
+  }
+
+  function startEditEntry(entry: DiaryEntry) {
+    setEditingEntry(entry.id);
+    setEntryForm({
+      date: entry.entry_date,
+      text: entry.text || '',
+      photos: entry.photos || []
+    });
+    setShowEntryForm(true);
+  }
+
+  async function saveEntry() {
+    if (!entryForm.text.trim() && entryForm.photos.length === 0) {
+      toast.error("Bitte Text oder Fotos hinzufügen");
+      return;
+    }
+
+    setSubmitting(true);
+
+    if (editingEntry) {
+      const { error } = await supabase
+        .from("job_diary_entries")
+        .update({
+          entry_date: entryForm.date,
+          text: entryForm.text,
+          photos: entryForm.photos,
+        })
+        .eq("id", editingEntry);
+
+      if (error) {
+        toast.error("Fehler beim Speichern");
+      } else {
+        toast.success("Eintrag aktualisiert");
+      }
+    } else {
+      const { error } = await supabase
+        .from("job_diary_entries")
+        .insert({
+          job_id: jobId,
+          partner_user_id: partnerUser.id,
+          entry_date: entryForm.date,
+          text: entryForm.text,
+          photos: entryForm.photos,
+        });
+
+      if (error) {
+        toast.error("Fehler beim Speichern");
+      } else {
+        toast.success("Eintrag hinzugefügt");
+      }
+    }
+
+    setShowEntryForm(false);
+    setSubmitting(false);
+    loadData();
+  }
+
+  async function deleteEntry(id: string) {
+    if (!confirm("Eintrag wirklich löschen?")) return;
+
+    const { error } = await supabase
+      .from("job_diary_entries")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Fehler beim Löschen");
+    } else {
+      toast.success("Eintrag gelöscht");
+      loadData();
+    }
   }
 
   function clearSignature() {
@@ -141,7 +268,6 @@ export default function RapportPage() {
     if (!signatureRef.current?.isEmpty()) {
       const dataUrl = signatureRef.current.toDataURL("image/png");
       
-      // Upload to storage
       const response = await fetch(dataUrl);
       const blob = await response.blob();
       const fileName = `reports/${jobId}/signature_${Date.now()}.png`;
@@ -162,37 +288,7 @@ export default function RapportPage() {
     setShowSignature(false);
   }
 
-  async function saveDraft() {
-    if (!partnerUser) return;
-
-    const reportData = {
-      job_id: jobId,
-      partner_user_id: partnerUser.id,
-      report_text: reportText,
-      work_done: workDone,
-      issues: issues,
-      photos: photos,
-      customer_name: customerName,
-      customer_signature_url: signatureData,
-      status: "draft",
-    };
-
-    // Upsert
-    const { error } = await supabase
-      .from("job_reports")
-      .upsert(reportData, { 
-        onConflict: "job_id,partner_user_id",
-        ignoreDuplicates: false 
-      });
-
-    if (error) {
-      toast.error("Fehler beim Speichern");
-    } else {
-      toast.success("Entwurf gespeichert");
-    }
-  }
-
-  async function submitReport() {
+  async function finalizeReport() {
     if (!signatureData) {
       toast.error("Bitte Kundenunterschrift einholen");
       return;
@@ -205,16 +301,22 @@ export default function RapportPage() {
 
     setSubmitting(true);
 
-    // Save report
+    // Alle Tagebuch-Einträge als Text zusammenfassen
+    const workDone = entries
+      .sort((a, b) => new Date(a.entry_date).getTime() - new Date(b.entry_date).getTime())
+      .map(e => `${new Date(e.entry_date).toLocaleDateString('de-DE')}: ${e.text}`)
+      .join('\n\n');
+
+    // Alle Fotos sammeln
+    const allPhotos = entries.flatMap(e => e.photos || []);
+
     const { error: reportError } = await supabase
       .from("job_reports")
       .upsert({
         job_id: jobId,
         partner_user_id: partnerUser.id,
-        report_text: reportText,
         work_done: workDone,
-        issues: issues,
-        photos: photos,
+        photos: allPhotos,
         customer_name: customerName,
         customer_signature_url: signatureData,
         signed_at: new Date().toISOString(),
@@ -228,7 +330,6 @@ export default function RapportPage() {
       return;
     }
 
-    // Update job status
     const { error: jobError } = await supabase
       .from("partner_jobs")
       .update({
@@ -240,7 +341,7 @@ export default function RapportPage() {
     if (jobError) {
       toast.error("Fehler beim Abschließen");
     } else {
-      toast.success("Rapport abgeschlossen!");
+      toast.success("Auftrag abgeschlossen!");
       router.push("/partner/auftraege");
     }
 
@@ -257,8 +358,10 @@ export default function RapportPage() {
 
   if (!job) return null;
 
+  const isCompleted = job.status === 'completed';
+
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="space-y-6">
       {/* Back */}
       <Link 
         href={`/partner/auftraege/${jobId}`}
@@ -269,157 +372,264 @@ export default function RapportPage() {
       </Link>
 
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white">Rapport</h1>
-        <p className="text-neutral-400 mt-1">{job.title} · {job.project?.name}</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <BookOpen className="w-7 h-7 text-[#fa432a]" />
+            Tagebuch
+          </h1>
+          <p className="text-neutral-400 mt-1">{job.title} · {job.project?.name}</p>
+        </div>
+        {!isCompleted && (
+          <button
+            onClick={startNewEntry}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            Eintrag hinzufügen
+          </button>
+        )}
       </div>
 
-      {/* Form */}
-      <div className="space-y-6">
-        {/* Work Done */}
-        <div className="card p-5">
-          <label className="block text-sm font-medium text-white mb-2">
-            Durchgeführte Arbeiten
-          </label>
-          <textarea
-            value={workDone}
-            onChange={(e) => setWorkDone(e.target.value)}
-            rows={4}
-            className="input w-full"
-            placeholder="Beschreiben Sie die durchgeführten Arbeiten..."
-          />
-        </div>
-
-        {/* Issues */}
-        <div className="card p-5">
-          <label className="block text-sm font-medium text-white mb-2">
-            Besonderheiten / Probleme (optional)
-          </label>
-          <textarea
-            value={issues}
-            onChange={(e) => setIssues(e.target.value)}
-            rows={3}
-            className="input w-full"
-            placeholder="Gab es Probleme oder Besonderheiten?"
-          />
-        </div>
-
-        {/* Additional Notes */}
-        <div className="card p-5">
-          <label className="block text-sm font-medium text-white mb-2">
-            Zusätzliche Notizen (optional)
-          </label>
-          <textarea
-            value={reportText}
-            onChange={(e) => setReportText(e.target.value)}
-            rows={3}
-            className="input w-full"
-            placeholder="Weitere Anmerkungen..."
-          />
-        </div>
-
-        {/* Photos */}
-        <div className="card p-5">
-          <label className="block text-sm font-medium text-white mb-3">
-            Fotos
-          </label>
-          
-          {photos.length > 0 && (
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              {photos.map((photo, index) => (
-                <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-[#111]">
-                  <img src={photo.url} alt="" className="w-full h-full object-cover" />
-                  <button
-                    onClick={() => removePhoto(index)}
-                    className="absolute top-2 right-2 p-1 bg-black/50 rounded-full text-white hover:bg-black/70"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
+      {/* Completed Banner */}
+      {isCompleted && finalReport && (
+        <div className="card p-4 bg-green-500/10 border-green-500/30">
+          <div className="flex items-center gap-3">
+            <CheckCircle className="w-6 h-6 text-green-400" />
+            <div>
+              <p className="text-green-400 font-medium">Auftrag abgeschlossen</p>
+              <p className="text-sm text-neutral-400">
+                Unterschrieben von {finalReport.customer_name} am {new Date(finalReport.signed_at).toLocaleDateString('de-DE')}
+              </p>
             </div>
-          )}
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handlePhotoUpload}
-            className="hidden"
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="btn-secondary w-full flex items-center justify-center gap-2"
-          >
-            <Camera className="w-5 h-5" />
-            Fotos hinzufügen
-          </button>
-        </div>
-
-        {/* Signature */}
-        <div className="card p-5">
-          <label className="block text-sm font-medium text-white mb-3">
-            Kundenunterschrift
-          </label>
-
-          <div className="mb-4">
-            <label className="block text-xs text-neutral-500 mb-1">Name des Kunden</label>
-            <input
-              type="text"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              className="input w-full"
-              placeholder="Vor- und Nachname"
-            />
           </div>
+        </div>
+      )}
 
-          {signatureData ? (
-            <div className="border border-[#333] rounded-lg p-4 bg-white">
-              <img src={signatureData} alt="Unterschrift" className="max-h-32 mx-auto" />
+      {/* Entry Form */}
+      {showEntryForm && (
+        <div className="card p-5">
+          <h2 className="font-semibold text-white mb-4">
+            {editingEntry ? "Eintrag bearbeiten" : "Neuer Eintrag"}
+          </h2>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-neutral-400 mb-1">Datum</label>
+              <input
+                type="date"
+                value={entryForm.date}
+                onChange={(e) => setEntryForm({ ...entryForm, date: e.target.value })}
+                className="input w-full max-w-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-neutral-400 mb-1">Was wurde gemacht?</label>
+              <textarea
+                value={entryForm.text}
+                onChange={(e) => setEntryForm({ ...entryForm, text: e.target.value })}
+                rows={4}
+                className="input w-full"
+                placeholder="Beschreiben Sie die durchgeführten Arbeiten, Besonderheiten, Material..."
+              />
+            </div>
+
+            {/* Photos */}
+            <div>
+              <label className="block text-sm text-neutral-400 mb-2">Fotos</label>
+              
+              {entryForm.photos.length > 0 && (
+                <div className="grid grid-cols-4 md:grid-cols-6 gap-2 mb-3">
+                  {entryForm.photos.map((photo, index) => (
+                    <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-[#111]">
+                      <img src={photo.url} alt="" className="w-full h-full object-cover" />
+                      <button
+                        onClick={() => removePhoto(index)}
+                        className="absolute top-1 right-1 p-1 bg-black/60 rounded-full text-white hover:bg-black/80"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handlePhotoUpload}
+                className="hidden"
+              />
               <button
-                onClick={() => setSignatureData(null)}
-                className="mt-3 text-sm text-red-400 hover:text-red-300 flex items-center gap-1 mx-auto"
+                onClick={() => fileInputRef.current?.click()}
+                className="btn-secondary text-sm flex items-center gap-2"
               >
-                <RotateCcw className="w-4 h-4" />
-                Unterschrift löschen
+                <Camera className="w-4 h-4" />
+                Fotos hinzufügen
               </button>
             </div>
-          ) : (
-            <button
-              onClick={() => setShowSignature(true)}
-              className="btn-primary w-full flex items-center justify-center gap-2"
-            >
-              <PenTool className="w-5 h-5" />
-              Unterschrift einholen
-            </button>
-          )}
-        </div>
 
-        {/* Actions */}
-        <div className="flex gap-3">
-          <button
-            onClick={saveDraft}
-            className="btn-secondary flex-1"
-          >
-            Entwurf speichern
-          </button>
-          <button
-            onClick={submitReport}
-            disabled={submitting || !signatureData}
-            className="btn-primary flex-1 flex items-center justify-center gap-2"
-          >
-            {submitting ? (
-              <Spinner className="w-5 h-5" />
-            ) : (
-              <>
-                <CheckCircle className="w-5 h-5" />
-                Abschließen
-              </>
-            )}
-          </button>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowEntryForm(false)}
+                className="btn-secondary"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={saveEntry}
+                disabled={submitting}
+                className="btn-primary flex items-center gap-2"
+              >
+                {submitting && <Spinner className="w-4 h-4" />}
+                Speichern
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Entries List */}
+      {entries.length === 0 ? (
+        <div className="card p-12 text-center">
+          <BookOpen className="w-16 h-16 mx-auto text-neutral-600 mb-4" />
+          <p className="text-neutral-400 text-lg">Noch keine Einträge</p>
+          <p className="text-neutral-500 text-sm mt-1">
+            Dokumentieren Sie Ihre Arbeit mit Tagebuch-Einträgen
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {entries.map((entry) => (
+            <div key={entry.id} className="card p-5 group">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#fa432a]/20 text-[#fa432a] flex items-center justify-center">
+                    <Calendar className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-white">
+                      {new Date(entry.entry_date).toLocaleDateString('de-DE', {
+                        weekday: 'long',
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric'
+                      })}
+                    </p>
+                    {entry.partner_user && (
+                      <p className="text-xs text-neutral-500">{entry.partner_user.display_name}</p>
+                    )}
+                  </div>
+                </div>
+                {!isCompleted && (
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => startEditEntry(entry)}
+                      className="p-2 text-neutral-500 hover:text-white rounded hover:bg-neutral-800"
+                      title="Bearbeiten"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => deleteEntry(entry.id)}
+                      className="p-2 text-neutral-500 hover:text-red-400 rounded hover:bg-neutral-800"
+                      title="Löschen"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {entry.text && (
+                <p className="text-neutral-300 whitespace-pre-wrap mb-3">{entry.text}</p>
+              )}
+
+              {entry.photos && entry.photos.length > 0 && (
+                <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                  {entry.photos.map((photo, index) => (
+                    <a
+                      key={index}
+                      href={photo.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="aspect-square rounded-lg overflow-hidden bg-[#111] hover:opacity-80 transition-opacity"
+                    >
+                      <img src={photo.url} alt="" className="w-full h-full object-cover" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Finalize Section */}
+      {!isCompleted && (
+        <div className="card p-5 border-[#fa432a]/30">
+          <h2 className="font-semibold text-white mb-4 flex items-center gap-2">
+            <PenTool className="w-5 h-5 text-[#fa432a]" />
+            Kundenunterschrift & Abschluss
+          </h2>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-neutral-400 mb-1">Name des Kunden</label>
+              <input
+                type="text"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                className="input w-full max-w-md"
+                placeholder="Vor- und Nachname"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-neutral-400 mb-2">Unterschrift</label>
+              {signatureData ? (
+                <div className="border border-[#333] rounded-lg p-4 bg-white max-w-md">
+                  <img src={signatureData} alt="Unterschrift" className="max-h-32 mx-auto" />
+                  <button
+                    onClick={() => setSignatureData(null)}
+                    className="mt-3 text-sm text-red-400 hover:text-red-300 flex items-center gap-1 mx-auto"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Neu unterschreiben
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowSignature(true)}
+                  className="btn-primary flex items-center gap-2"
+                >
+                  <PenTool className="w-5 h-5" />
+                  Unterschrift einholen
+                </button>
+              )}
+            </div>
+
+            <div className="pt-2">
+              <button
+                onClick={finalizeReport}
+                disabled={submitting || !signatureData || !customerName.trim()}
+                className="btn-primary flex items-center gap-2"
+              >
+                {submitting ? <Spinner className="w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
+                Auftrag abschließen
+              </button>
+              {(!signatureData || !customerName.trim()) && (
+                <p className="text-xs text-neutral-500 mt-2">
+                  Kundenname und Unterschrift erforderlich
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Signature Modal */}
       {showSignature && (

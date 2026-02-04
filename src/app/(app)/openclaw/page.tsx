@@ -45,41 +45,45 @@ export default function OpenClawPage() {
   }, []);
 
   async function loadData() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
 
-    const [logsRes, todayLogsRes, skillsRes, heartbeatRes, errorsRes] = await Promise.all([
-      supabase.from("logs").select("*", { count: "exact", head: true }),
-      supabase.from("logs").select("*", { count: "exact", head: true }).gte("created_at", today.toISOString()),
-      supabase.from("skills").select("*").order("name"),
-      supabase.from("logs").select("created_at").eq("type", "heartbeat").order("created_at", { ascending: false }).limit(1),
-      supabase.from("logs").select("*", { count: "exact", head: true }).eq("type", "error").gte("created_at", yesterday.toISOString()),
-    ]);
+      const [logsRes, todayLogsRes, skillsRes, heartbeatRes, errorsRes] = await Promise.all([
+        supabase.from("logs").select("*", { count: "exact", head: true }),
+        supabase.from("logs").select("*", { count: "exact", head: true }).gte("created_at", today.toISOString()),
+        supabase.from("skills").select("*").order("name"),
+        supabase.from("logs").select("created_at").eq("type", "heartbeat").order("created_at", { ascending: false }).limit(1),
+        supabase.from("logs").select("*", { count: "exact", head: true }).eq("type", "error").gte("created_at", yesterday.toISOString()),
+      ]);
 
-    const activeSkills = (skillsRes.data || []).filter((s) => s.active);
+      const activeSkills = (skillsRes.data || []).filter((s) => s.active);
 
-    setStats({
-      totalLogs: logsRes.count || 0,
-      todayLogs: todayLogsRes.count || 0,
-      activeSkills: activeSkills.length,
-      totalSkills: skillsRes.data?.length || 0,
-      lastHeartbeat: heartbeatRes.data?.[0]?.created_at || null,
-      errors24h: errorsRes.count || 0,
-    });
+      setStats({
+        totalLogs: logsRes.count || 0,
+        todayLogs: todayLogsRes.count || 0,
+        activeSkills: activeSkills.length,
+        totalSkills: skillsRes.data?.length || 0,
+        lastHeartbeat: heartbeatRes.data?.[0]?.created_at || null,
+        errors24h: errorsRes.count || 0,
+      });
 
-    setSkills(skillsRes.data || []);
+      setSkills(skillsRes.data || []);
 
-    // Load recent logs
-    const { data: logs } = await supabase
-      .from("logs")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(10);
-    setRecentLogs(logs || []);
-
-    setLoading(false);
+      // Load recent logs
+      const { data: logs } = await supabase
+        .from("logs")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(10);
+      setRecentLogs(logs || []);
+    } catch (err) {
+      console.error("Error loading openclaw data:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function toggleSkill(skill: Skill) {

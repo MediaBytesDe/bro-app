@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
-const LEXWARE_API_KEY = "1hgePA-GyqCIhCbxfkaB1kYlVvVj0kkTBJeJ6BR4GVZ-doqv";
+const LEXWARE_API_KEY = process.env.LEXWARE_API_KEY;
 const LEXWARE_BASE_URL = "https://api.lexoffice.io/v1";
 
 async function lexwareRequest(endpoint: string) {
@@ -72,8 +72,29 @@ function findProductByName(name: string, products: any[]): any | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const { reset } = await request.json().catch(() => ({}));
+    // Auth check - only admin/mitarbeiter
     const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { data: profile } = await supabase
+      .from("users")
+      .select("role")
+      .eq("auth_id", user.id)
+      .single();
+
+    if (!profile || !["admin", "mitarbeiter", "superadmin"].includes(profile.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (!LEXWARE_API_KEY) {
+      return NextResponse.json({ error: "LEXWARE_API_KEY not configured" }, { status: 500 });
+    }
+
+    const { reset } = await request.json().catch(() => ({}));
     
     // Optional: Delete all existing imported quotes for re-import
     if (reset) {
@@ -242,8 +263,8 @@ export async function POST(request: NextRequest) {
       details: { imported, skipped, errors },
     });
 
-  } catch (error: any) {
-    console.error("Import error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Import fehlgeschlagen";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

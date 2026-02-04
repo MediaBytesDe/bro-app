@@ -58,13 +58,18 @@ export default function ProjectsPage() {
 
   async function loadBrands() {
     setLoading(true);
-    const { data } = await supabase
-      .from("projects")
-      .select("*")
-      .is("parent_id", null)
-      .order("sort_order", { ascending: true });
-    setBrands(data || []);
-    setLoading(false);
+    try {
+      const { data } = await supabase
+        .from("projects")
+        .select("*")
+        .is("parent_id", null)
+        .order("sort_order", { ascending: true });
+      setBrands(data || []);
+    } catch (err) {
+      console.error("Error loading brands:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function loadWorkfolders(brandId: string) {

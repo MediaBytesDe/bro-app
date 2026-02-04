@@ -13,6 +13,7 @@ import {
   ChevronRight
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { getTradeLabel, loadTradesFromDB } from "@/lib/trades";
 
 interface Job {
   id: string;
@@ -29,13 +30,13 @@ interface Job {
     id: string;
     name: string;
     customer: {
-      name: string;
+      first_name: string;
+      last_name: string;
+      street: string;
+      house_number: string;
+      postal_code: string;
       city: string;
-      address: string;
     };
-  };
-  assigned_user?: {
-    display_name: string;
   };
 }
 
@@ -57,20 +58,27 @@ export default function JobsListPage() {
   }, []);
 
   async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      // Trades aus DB laden (für Labels)
+      await loadTradesFromDB(supabase, true);
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log("[Jobs] user:", user?.id);
+      if (!user) { setLoading(false); return; }
 
-    const { data: pu } = await supabase
-      .from("partner_users")
-      .select("*, partner:partners(*)")
-      .eq("auth_user_id", user.id)
-      .single();
+      const { data: pu, error: puError } = await supabase
+        .from("partner_users")
+        .select("*, partner:partners(*)")
+        .eq("auth_user_id", user.id)
+        .single();
 
-    if (!pu) return;
-    setPartnerUser(pu);
+      console.log("[Jobs] partnerUser:", pu, "error:", puError);
+      if (!pu) { setLoading(false); return; }
+      setPartnerUser(pu);
 
     const partnerId = pu.partner_id;
     const isAdmin = pu.role === 'admin';
+    console.log("[Jobs] partnerId:", partnerId, "isAdmin:", isAdmin);
 
     let query = supabase
       .from("partner_jobs")
@@ -78,9 +86,8 @@ export default function JobsListPage() {
         *,
         project:projects (
           id, name,
-          customer:customers (name, city, address)
-        ),
-        assigned_user:partner_users!assigned_to_user_id (display_name)
+          customer:customers (first_name, last_name, street, house_number, postal_code, city)
+        )
       `)
       .order("scheduled_date", { ascending: true, nullsFirst: false });
 
@@ -92,9 +99,28 @@ export default function JobsListPage() {
       query = query.or(`status.eq.open,accepted_by_partner_id.eq.${partnerId}`);
     }
 
-    const { data } = await query;
-    setJobs(data || []);
-    setLoading(false);
+    const { data, error: jobsError } = await query;
+    console.log("[Jobs] jobs:", data?.length, "error:", jobsError);
+    
+    // Filter offene Jobs nach Partner-Gewerken
+      const partnerTrades = pu.partner?.trades || [];
+      const filteredData = (data || []).filter(job => {
+        // Eigene Jobs immer zeigen
+        if (job.accepted_by_partner_id === partnerId) return true;
+        // Offene Jobs nur wenn Gewerk passt (oder kein Gewerk gesetzt)
+        if (job.status === 'open') {
+          if (!job.trade) return true; // Kein Gewerk = für alle
+          return partnerTrades.includes(job.trade);
+        }
+        return true;
+      });
+      
+      setJobs(filteredData);
+    } catch (err) {
+      console.error("Error loading jobs:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const filteredJobs = jobs.filter(job => {
@@ -138,7 +164,7 @@ export default function JobsListPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <ClipboardList className="w-7 h-7 text-blue-400" />
+            <ClipboardList className="w-7 h-7 text-[#fa432a]" />
             Aufträge
           </h1>
           <p className="text-neutral-400 mt-1">
@@ -155,14 +181,14 @@ export default function JobsListPage() {
             onClick={() => setFilter(f.key)}
             className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
               filter === f.key
-                ? 'bg-blue-500 text-white'
+                ? 'bg-[#fa432a] text-white'
                 : 'bg-[#111] text-neutral-400 hover:text-white hover:bg-[#1a1a1a]'
             }`}
           >
             {f.label}
             {f.count > 0 && (
               <span className={`ml-2 px-1.5 py-0.5 rounded text-xs ${
-                filter === f.key ? 'bg-blue-600' : 'bg-[#222]'
+                filter === f.key ? 'bg-[#fa432a]' : 'bg-[#222]'
               }`}>
                 {f.count}
               </span>
@@ -183,60 +209,69 @@ export default function JobsListPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredJobs.map((job) => (
-            <Link
-              key={job.id}
-              href={`/partner/auftraege/${job.id}`}
-              className={`card p-4 block hover:bg-[#1a1a1a] transition-colors ${
-                job.status === 'open' ? 'border-l-2 border-yellow-500' : ''
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3">
-                    <h3 className="font-medium text-white truncate">{job.title}</h3>
+        <div className="card overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-neutral-800 bg-[#0a0a0a]">
+                <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium">Status</th>
+                <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium">Auftrag</th>
+                <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium hidden md:table-cell">Kunde / Ort</th>
+                <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium hidden lg:table-cell">Projekt</th>
+                <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium hidden sm:table-cell">Termin</th>
+                <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium hidden xl:table-cell">Gewerk</th>
+                <th className="w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredJobs.map((job) => (
+                <tr 
+                  key={job.id}
+                  className={`border-b border-neutral-800/50 hover:bg-[#111] transition-colors cursor-pointer ${
+                    job.status === 'open' ? 'border-l-2 border-l-yellow-500' : ''
+                  }`}
+                  onClick={() => window.location.href = `/partner/auftraege/${job.id}`}
+                >
+                  <td className="py-3 px-4">
                     <JobStatusBadge status={job.status} />
-                    {job.trade && (
-                      <span className="text-xs px-2 py-0.5 bg-neutral-800 text-neutral-400 rounded hidden sm:inline">
-                        {job.trade}
-                      </span>
-                    )}
-                  </div>
-                  
-                  <p className="text-sm text-neutral-400 mt-1 truncate">
-                    {job.project?.customer?.name} · {job.project?.name}
-                  </p>
-                  
-                  <div className="flex items-center gap-4 mt-2 text-xs text-neutral-500">
-                    {job.scheduled_date && (
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="font-medium text-white">{job.title}</span>
+                  </td>
+                  <td className="py-3 px-4 hidden md:table-cell">
+                    <span className="text-neutral-300">
+                      {job.status === 'open' 
+                        ? `${job.project?.customer?.postal_code} ${job.project?.customer?.city}`
+                        : `${job.project?.customer?.first_name} ${job.project?.customer?.last_name}`
+                      }
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 hidden lg:table-cell">
+                    <span className="text-neutral-400 text-sm">{job.project?.name}</span>
+                  </td>
+                  <td className="py-3 px-4 hidden sm:table-cell">
+                    {job.scheduled_date ? (
+                      <span className="text-neutral-300 text-sm flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-neutral-500" />
                         {formatDate(job.scheduled_date)}
-                        {job.scheduled_time_start && ` · ${job.scheduled_time_start.slice(0, 5)}`}
+                      </span>
+                    ) : (
+                      <span className="text-neutral-500 text-sm">–</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-4 hidden xl:table-cell">
+                    {job.trade && (
+                      <span className="text-xs px-2 py-0.5 bg-neutral-800 text-neutral-400 rounded">
+                        {getTradeLabel(job.trade)}
                       </span>
                     )}
-                    {job.project?.customer?.city && (
-                      <span className="flex items-center gap-1">
-                        <MapPin className="w-3 h-3" />
-                        {job.project.customer.city}
-                      </span>
-                    )}
-                    {job.estimated_hours && (
-                      <span>~{job.estimated_hours}h</span>
-                    )}
-                    {job.assigned_user?.display_name && (
-                      <span className="text-blue-400">
-                        → {job.assigned_user.display_name}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                
-                <ChevronRight className="w-5 h-5 text-neutral-600 ml-4" />
-              </div>
-            </Link>
-          ))}
+                  </td>
+                  <td className="py-3 px-4">
+                    <ChevronRight className="w-4 h-4 text-neutral-600" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -246,7 +281,7 @@ export default function JobsListPage() {
 function JobStatusBadge({ status }: { status: string }) {
   const statusMap: Record<string, { label: string; class: string }> = {
     open: { label: "Verfügbar", class: "bg-yellow-500/20 text-yellow-400" },
-    accepted: { label: "Angenommen", class: "bg-blue-500/20 text-blue-400" },
+    accepted: { label: "Angenommen", class: "bg-[#fa432a]/20 text-[#fa432a]" },
     in_progress: { label: "In Arbeit", class: "bg-orange-500/20 text-orange-400" },
     completed: { label: "Erledigt", class: "bg-green-500/20 text-green-400" },
     declined: { label: "Abgelehnt", class: "bg-red-500/20 text-red-400" },

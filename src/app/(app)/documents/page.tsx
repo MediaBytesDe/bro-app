@@ -74,21 +74,25 @@ export default function DocumentsPage() {
 
   async function loadData() {
     setLoading(true);
-    
-    const [docsRes, projectsRes] = await Promise.all([
-      supabase
-        .from("documents")
-        .select("*, projects(name)")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("projects")
-        .select("id, name, slug")
-        .order("name"),
-    ]);
+    try {
+      const [docsRes, projectsRes] = await Promise.all([
+        supabase
+          .from("documents")
+          .select("*, projects(name)")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("projects")
+          .select("id, name, slug")
+          .order("name"),
+      ]);
 
-    setDocuments(docsRes.data || []);
-    setProjects(projectsRes.data || []);
-    setLoading(false);
+      setDocuments(docsRes.data || []);
+      setProjects(projectsRes.data || []);
+    } catch (err) {
+      console.error("Error loading documents:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const filtered = documents.filter((d) => {

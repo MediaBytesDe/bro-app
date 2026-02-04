@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { 
@@ -10,7 +11,10 @@ import {
   Users, 
   Settings,
   LogOut,
-  Building2
+  Building2,
+  ListTodo,
+  Bell,
+  CalendarClock
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -34,6 +38,74 @@ export function PartnerShell({ partner, partnerUser, children }: Props) {
   const router = useRouter();
   const supabase = createClient();
   const isAdmin = partnerUser.role === 'admin';
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [pendingRequests, setPendingRequests] = useState(0);
+
+  useEffect(() => {
+    loadCounts();
+
+    // Realtime für Notifications
+    const notifChannel = supabase
+      .channel("notifications_bell")
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "notifications",
+        filter: `recipient_id=eq.${partnerUser.id}`,
+      }, () => loadCounts())
+      .subscribe();
+
+    // Realtime für Termin-Anfragen
+    const reqChannel = supabase
+      .channel("appointment_responses_bell")
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public", 
+        table: "appointment_responses",
+      }, () => loadCounts())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(notifChannel);
+      supabase.removeChannel(reqChannel);
+    };
+  }, [partnerUser.id, partner.id]);
+
+  async function loadCounts() {
+    // Unread notifications
+    const { count: notifCount } = await supabase
+      .from("notifications")
+      .select("*", { count: "exact", head: true })
+      .eq("recipient_type", "partner_user")
+      .eq("recipient_id", partnerUser.id)
+      .is("read_at", null);
+
+    setUnreadCount(notifCount || 0);
+
+    // Pending appointment requests
+    const { data: jobs } = await supabase
+      .from("partner_jobs")
+      .select("id")
+      .eq("accepted_by_partner_id", partner.id);
+
+    if (jobs && jobs.length > 0) {
+      const jobIds = jobs.map(j => j.id);
+      const { data: appointments } = await supabase
+        .from("partner_job_appointments")
+        .select("id")
+        .in("job_id", jobIds);
+
+      if (appointments && appointments.length > 0) {
+        const { count: reqCount } = await supabase
+          .from("appointment_responses")
+          .select("*", { count: "exact", head: true })
+          .in("partner_appointment_id", appointments.map(a => a.id))
+          .eq("status", "pending");
+
+        setPendingRequests(reqCount || 0);
+      }
+    }
+  }
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -43,29 +115,41 @@ export function PartnerShell({ partner, partnerUser, children }: Props) {
   const navItems = [
     { href: "/partner", icon: Home, label: "Dashboard", exact: true },
     { href: "/partner/auftraege", icon: ClipboardList, label: "Aufträge" },
+    { href: "/partner/aufgaben", icon: ListTodo, label: "Aufgaben" },
+    { href: "/partner/termin-anfragen", icon: CalendarClock, label: "Termin-Anfragen", badge: pendingRequests },
     { href: "/partner/kalender", icon: Calendar, label: "Kalender" },
-    { href: "/partner/rechnungen", icon: FileText, label: "Rechnungen" },
+    ...(isAdmin ? [{ href: "/partner/rechnungen", icon: FileText, label: "Rechnungen" }] : []),
     ...(isAdmin ? [{ href: "/partner/team", icon: Users, label: "Team" }] : []),
     ...(isAdmin ? [{ href: "/partner/einstellungen", icon: Settings, label: "Einstellungen" }] : []),
   ];
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
+    <div className="min-h-screen bg-[#0a0a0a] flex flex-col">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-[#0a0a0a]/95 backdrop-blur border-b border-[#1a1a1a]">
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div className="max-w-[1800px] mx-auto px-6 h-16 flex items-center justify-between">
           <Link href="/partner" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-              <Building2 className="w-5 h-5 text-white" />
-            </div>
+            <img src="/logo.png" alt="BROjekt" className="h-10" />
             <div>
               <span className="font-semibold text-white block">{partner.company_name}</span>
               <span className="text-xs text-neutral-500">Partner-Portal</span>
             </div>
           </Link>
           
-          <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
+          <div className="flex items-center gap-2">
+            <Link
+              href="/partner/benachrichtigungen"
+              className="relative p-2 text-neutral-400 hover:text-white transition-colors"
+              title="Benachrichtigungen"
+            >
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-xs font-bold rounded-full px-1">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
+            </Link>
+            <div className="text-right hidden sm:block ml-2">
               <p className="text-sm font-medium text-white">{partnerUser.display_name}</p>
               <p className="text-xs text-neutral-500">
                 {isAdmin ? "Administrator" : "Mitarbeiter"}
@@ -84,13 +168,14 @@ export function PartnerShell({ partner, partnerUser, children }: Props) {
 
       {/* Navigation */}
       <nav className="border-b border-[#1a1a1a]">
-        <div className="max-w-6xl mx-auto px-4">
+        <div className="max-w-[1800px] mx-auto px-6">
           <div className="flex gap-1 overflow-x-auto scrollbar-hide">
             {navItems.map((item) => (
               <NavLink 
                 key={item.href}
                 href={item.href} 
                 icon={item.icon} 
+                badge={(item as any).badge}
                 active={item.exact 
                   ? pathname === item.href 
                   : pathname?.startsWith(item.href)
@@ -104,16 +189,16 @@ export function PartnerShell({ partner, partnerUser, children }: Props) {
       </nav>
 
       {/* Content */}
-      <main className="max-w-6xl mx-auto px-4 py-6">
+      <main className="max-w-[1800px] mx-auto px-6 py-6 flex-1 w-full">
         {children}
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-[#1a1a1a] py-6 mt-12">
-        <div className="max-w-6xl mx-auto px-4 text-center text-sm text-neutral-500">
+      <footer className="border-t border-[#1a1a1a] py-6 mt-auto">
+        <div className="max-w-[1800px] mx-auto px-6 text-center text-sm text-neutral-500">
           <p>Partner von BROjekt GmbH · Sofort.Solar</p>
           <p className="mt-1">
-            Support: <a href="tel:+4949719472940" className="text-blue-400 hover:underline">04971 9472940</a>
+            Support: <a href="tel:+4949719472940" className="text-[#fa432a] hover:underline">04971 9472940</a>
           </p>
         </div>
       </footer>
@@ -121,10 +206,11 @@ export function PartnerShell({ partner, partnerUser, children }: Props) {
   );
 }
 
-function NavLink({ href, icon: Icon, active, children }: { 
+function NavLink({ href, icon: Icon, active, badge, children }: { 
   href: string; 
   icon: any; 
   active?: boolean;
+  badge?: number;
   children: React.ReactNode;
 }) {
   return (
@@ -132,12 +218,17 @@ function NavLink({ href, icon: Icon, active, children }: {
       href={href}
       className={`flex items-center gap-2 px-4 py-3 text-sm border-b-2 transition-colors whitespace-nowrap ${
         active 
-          ? "text-white border-blue-500" 
-          : "text-neutral-400 hover:text-white border-transparent hover:border-blue-500/50"
+          ? "text-white border-[#fa432a]" 
+          : "text-neutral-400 hover:text-white border-transparent hover:border-[#fa432a]/50"
       }`}
     >
       <Icon className="w-4 h-4" />
       {children}
+      {badge !== undefined && badge > 0 && (
+        <span className="ml-1 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-xs font-bold rounded-full px-1">
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
     </Link>
   );
 }

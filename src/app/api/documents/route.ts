@@ -52,7 +52,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, document });
   } catch (err) {
-    console.error("Document upload error:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Upload failed" },
       { status: 500 }
@@ -63,6 +62,7 @@ export async function POST(request: Request) {
 /**
  * GET /api/documents?id=xxx
  * Get document with download URL
+ * SECURITY: Ownership check - users can only access their own documents
  */
 export async function GET(request: Request) {
   const supabase = await createClient();
@@ -80,6 +80,62 @@ export async function GET(request: Request) {
   }
 
   try {
+    // Get user profile for role check
+    const { data: userProfile } = await supabase
+      .from("users")
+      .select("role, id")
+      .eq("auth_id", user.id)
+      .single();
+
+    const isStaff = userProfile?.role && ["admin", "mitarbeiter", "superadmin"].includes(userProfile.role);
+
+    // Get document with project info for ownership check
+    const { data: docRecord, error: docError } = await supabase
+      .from("documents")
+      .select(`
+        id,
+        project_id,
+        customer_id,
+        visible_to_customer,
+        projects!left(customer_id)
+      `)
+      .eq("id", documentId)
+      .single();
+
+    if (docError || !docRecord) {
+      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+    }
+
+    // Staff can access any document
+    if (!isStaff) {
+      // For customers: check ownership
+      const { data: customerProfile } = await supabase
+        .from("customers")
+        .select("id")
+        .eq("auth_user_id", user.id)
+        .single();
+
+      if (!customerProfile) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+
+      // Check if document belongs to customer's project
+      // projects is an array from the left join, take first element
+      const projectData = Array.isArray(docRecord.projects) 
+        ? docRecord.projects[0] 
+        : docRecord.projects;
+      const projectCustomerId = (projectData as { customer_id: string } | null)?.customer_id;
+      const isOwner = 
+        docRecord.customer_id === customerProfile.id || 
+        projectCustomerId === customerProfile.id;
+
+      // Customers can only see their own documents that are marked visible
+      if (!isOwner || !docRecord.visible_to_customer) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
+
+    // Fetch the full document with URL
     const document = await getDocumentWithUrl(documentId);
     
     if (!document) {
@@ -88,7 +144,6 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ document });
   } catch (err) {
-    console.error("Document fetch error:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Fetch failed" },
       { status: 500 }
@@ -130,7 +185,6 @@ export async function DELETE(request: Request) {
     await deleteDocument(documentId);
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error("Document delete error:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Delete failed" },
       { status: 500 }

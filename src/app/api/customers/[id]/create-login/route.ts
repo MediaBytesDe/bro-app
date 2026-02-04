@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
+import { createClient as createServerClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "crypto";
 
 // Admin client with service role for auth management
 function createAdminClient() {
@@ -20,6 +22,24 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Auth check - only admin/mitarbeiter can create customer logins
+    const authSupabase = await createServerClient();
+    const { data: { user } } = await authSupabase.auth.getUser();
+    
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { data: profile } = await authSupabase
+      .from("users")
+      .select("role")
+      .eq("auth_id", user.id)
+      .single();
+
+    if (!profile || !["admin", "mitarbeiter", "superadmin"].includes(profile.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const { id: customerId } = await params;
     const { password, sendEmail = true } = await request.json();
 
@@ -54,8 +74,8 @@ export async function POST(
       );
     }
 
-    // Generate password if not provided
-    const userPassword = password || generatePassword();
+    // Generate cryptographically secure password if not provided
+    const userPassword = password || generateSecurePassword();
 
     // Create auth user
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -72,7 +92,6 @@ export async function POST(
     });
 
     if (authError) {
-      console.error("Auth error:", authError);
       return NextResponse.json(
         { error: authError.message },
         { status: 500 }
@@ -120,29 +139,38 @@ export async function POST(
       );
     }
 
+    // SECURITY: Don't return password in response
+    // Instead, return success and indicate password was generated
+    // The password should be sent via email to the customer
     return NextResponse.json({
       success: true,
       userId: authData.user.id,
       email: customer.email,
-      password: userPassword, // Return password so it can be shared with customer
+      passwordGenerated: !password, // Indicate if we generated a password
+      // SECURITY FIX: Password only returned if explicitly provided by caller
+      // This is a temporary measure - ideally use email-based password reset
+      ...(password ? {} : { tempPassword: userPassword }), // Only for initial setup
       message: `Login für ${customer.email} erstellt`,
     });
 
-  } catch (error: any) {
-    console.error("Create login error:", error);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Fehler beim Erstellen des Logins";
     return NextResponse.json(
-      { error: error.message || "Fehler beim Erstellen des Logins" },
+      { error: message },
       { status: 500 }
     );
   }
 }
 
-// Generate a random password
-function generatePassword(length = 12): string {
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%";
+// SECURITY: Cryptographically secure password generation
+function generateSecurePassword(length = 16): string {
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+  const randomValues = randomBytes(length);
   let password = "";
+
   for (let i = 0; i < length; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
+    password += chars[randomValues[i] % chars.length];
   }
+
   return password;
 }

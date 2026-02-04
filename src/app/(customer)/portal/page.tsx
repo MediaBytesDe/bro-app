@@ -1,66 +1,63 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
+import { useCustomerContext } from "@/hooks/use-customer-context";
 import { createClient } from "@/lib/supabase/client";
 import { Spinner } from "@/components/ui/spinner";
 import Link from "next/link";
-import { FolderOpen, FileText, Calendar, Clock, ArrowRight } from "lucide-react";
+import { FolderOpen, FileText, Calendar, Clock, ArrowRight, Eye, X } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 export default function CustomerPortalPage() {
-  const { profile } = useAuth();
+  const searchParams = useSearchParams();
+  const { customerId, customerName, isImpersonating, loading: customerLoading } = useCustomerContext();
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<any[]>([]);
   const [quotes, setQuotes] = useState<any[]>([]);
-  const [customerId, setCustomerId] = useState<string | null>(null);
 
   const supabase = createClient();
 
   useEffect(() => {
-    loadData();
-  }, [profile]);
+    if (!customerLoading && customerId) {
+      loadData();
+    } else if (!customerLoading && !customerId) {
+      setLoading(false);
+    }
+  }, [customerId, customerLoading]);
 
   async function loadData() {
-    if (!profile?.auth_id) return;
+    if (!customerId) { setLoading(false); return; }
 
-    // Find customer by auth_user_id
-    const { data: customer } = await supabase
-      .from("customers")
-      .select("id")
-      .eq("auth_user_id", profile.auth_id)
-      .single();
+    try {
+      // Load projects for this customer
+      const { data: projectsData } = await supabase
+        .from("projects")
+        .select("id, name, slug, icon, workfolder_status, created_at")
+        .eq("customer_id", customerId)
+        .order("created_at", { ascending: false })
+        .limit(5);
 
-    if (!customer) {
+      setProjects(projectsData || []);
+
+      // Load quotes for this customer
+      const { data: quotesData } = await supabase
+        .from("wawi_quotes")
+        .select("id, title, package_title, lexware_quote_number, status, total_amount, quote_date, lexware_quotation_id")
+        .eq("customer_id", customerId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      setQuotes(quotesData || []);
+    } catch (err) {
+      console.error("Error loading portal:", err);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setCustomerId(customer.id);
-
-    // Load projects for this customer
-    const { data: projectsData } = await supabase
-      .from("projects")
-      .select("id, name, slug, icon, workfolder_status, created_at")
-      .eq("customer_id", customer.id)
-      .order("created_at", { ascending: false })
-      .limit(5);
-
-    setProjects(projectsData || []);
-
-    // Load quotes for this customer
-    const { data: quotesData } = await supabase
-      .from("wawi_quotes")
-      .select("id, title, package_title, lexware_quote_number, status, total_amount, quote_date, lexware_quotation_id")
-      .eq("customer_id", customer.id)
-      .order("created_at", { ascending: false })
-      .limit(5);
-
-    setQuotes(quotesData || []);
-    setLoading(false);
   }
 
-  if (loading) {
+  if (loading || customerLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Spinner />
@@ -68,12 +65,42 @@ export default function CustomerPortalPage() {
     );
   }
 
+  // No customer found
+  if (!customerId) {
+    return (
+      <div className="flex items-center justify-center h-64 text-neutral-400">
+        Kein Kundenkonto gefunden.
+      </div>
+    );
+  }
+
+  // Build impersonate query string for links
+  const impersonateQuery = isImpersonating ? `?impersonate=${customerId}` : "";
+
   return (
     <div className="space-y-8">
+      {/* Admin Impersonation Banner */}
+      {isImpersonating && (
+        <div className="bg-blue-600/20 border border-blue-500/30 rounded-lg p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-blue-400">
+            <Eye className="w-5 h-5" />
+            <span className="font-medium">Admin-Ansicht</span>
+            <span className="text-blue-400/70">– Du siehst das Portal als: <strong>{customerName}</strong></span>
+          </div>
+          <button
+            onClick={() => window.close()}
+            className="p-1 text-blue-400 hover:text-blue-300"
+            title="Fenster schließen"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      )}
+
       {/* Welcome */}
       <div>
         <h1 className="text-2xl font-bold text-white">
-          Willkommen, {profile?.display_name?.split(" ")[0] || "Kunde"}!
+          Willkommen{customerName ? `, ${customerName.split(" ")[0]}` : ""}!
         </h1>
         <p className="text-neutral-400 mt-1">
           Hier finden Sie einen Überblick über Ihre Projekte und Angebote.
@@ -82,30 +109,10 @@ export default function CustomerPortalPage() {
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard
-          icon={FolderOpen}
-          label="Projekte"
-          value={projects.length}
-          color="orange"
-        />
-        <StatCard
-          icon={FileText}
-          label="Angebote"
-          value={quotes.length}
-          color="blue"
-        />
-        <StatCard
-          icon={Clock}
-          label="Offen"
-          value={quotes.filter(q => q.status === "sent").length}
-          color="yellow"
-        />
-        <StatCard
-          icon={Calendar}
-          label="Angenommen"
-          value={quotes.filter(q => q.status === "accepted").length}
-          color="green"
-        />
+        <StatCard icon={FolderOpen} label="Projekte" value={projects.length} color="orange" />
+        <StatCard icon={FileText} label="Angebote" value={quotes.length} color="blue" />
+        <StatCard icon={Clock} label="Offen" value={quotes.filter(q => q.status === "sent").length} color="yellow" />
+        <StatCard icon={Calendar} label="Angenommen" value={quotes.filter(q => q.status === "accepted").length} color="green" />
       </div>
 
       {/* Recent Projects */}
@@ -116,7 +123,7 @@ export default function CustomerPortalPage() {
             Aktuelle Projekte
           </h2>
           {projects.length > 0 && (
-            <Link href="/portal/projekte" className="text-sm text-[#fa432a] hover:underline flex items-center gap-1">
+            <Link href={`/portal/projekte${impersonateQuery}`} className="text-sm text-[#fa432a] hover:underline flex items-center gap-1">
               Alle anzeigen <ArrowRight className="w-4 h-4" />
             </Link>
           )}
@@ -132,7 +139,7 @@ export default function CustomerPortalPage() {
             {projects.map((project) => (
               <Link
                 key={project.id}
-                href={`/portal/projekte/${project.slug}`}
+                href={`/portal/projekte/${project.slug}${impersonateQuery}`}
                 className="card p-4 flex items-center justify-between hover:bg-[#1a1a1a] transition-colors"
               >
                 <div className="flex items-center gap-3">
@@ -157,7 +164,7 @@ export default function CustomerPortalPage() {
             Angebote
           </h2>
           {quotes.length > 0 && (
-            <Link href="/portal/angebote" className="text-sm text-[#fa432a] hover:underline flex items-center gap-1">
+            <Link href={`/portal/angebote${impersonateQuery}`} className="text-sm text-[#fa432a] hover:underline flex items-center gap-1">
               Alle anzeigen <ArrowRight className="w-4 h-4" />
             </Link>
           )}
@@ -171,10 +178,7 @@ export default function CustomerPortalPage() {
         ) : (
           <div className="grid gap-3">
             {quotes.map((quote) => (
-              <div
-                key={quote.id}
-                className="card p-4 flex items-center justify-between"
-              >
+              <div key={quote.id} className="card p-4 flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono text-neutral-500">

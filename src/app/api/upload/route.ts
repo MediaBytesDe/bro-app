@@ -1,13 +1,18 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
-  console.log("=== UPLOAD API CALLED ===");
-  console.log("Service key exists:", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-  
   try {
+    // Auth check
+    const authSupabase = await createClient();
+    const { data: { user } } = await authSupabase.auth.getUser();
+    
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const supabase = createAdminClient();
-    console.log("Admin client created");
     
     const formData = await req.formData();
     const file = formData.get("file") as File;
@@ -47,9 +52,7 @@ export async function POST(req: NextRequest) {
       });
 
     if (uploadError) {
-      console.error("Upload error:", JSON.stringify(uploadError, null, 2));
-      console.error("Upload details:", { fileName, fileType: file.type, fileSize: file.size });
-      return NextResponse.json({ error: uploadError.message, details: uploadError }, { status: 500 });
+      return NextResponse.json({ error: uploadError.message }, { status: 500 });
     }
 
     // Get public URL
@@ -76,13 +79,11 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (dbError) {
-      console.error("DB error:", dbError);
       return NextResponse.json({ error: dbError.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, document: doc });
   } catch (error) {
-    console.error("Upload error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Upload fehlgeschlagen" },
       { status: 500 }

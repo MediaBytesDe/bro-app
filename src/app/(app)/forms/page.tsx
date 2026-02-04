@@ -88,15 +88,19 @@ export default function FormsPage() {
 
   async function loadData() {
     setLoading(true);
-    
-    const [templatesRes, brandsRes] = await Promise.all([
-      supabase.from("form_templates").select("*").eq("is_active", true).order("name"),
-      supabase.from("projects").select("id, name, slug").is("parent_id", null).order("name"),
-    ]);
-    
-    setTemplates(templatesRes.data || []);
-    setBrands(brandsRes.data || []);
-    setLoading(false);
+    try {
+      const [templatesRes, brandsRes] = await Promise.all([
+        supabase.from("form_templates").select("*").eq("is_active", true).order("name"),
+        supabase.from("projects").select("id, name, slug").is("parent_id", null).order("name"),
+      ]);
+      
+      setTemplates(templatesRes.data || []);
+      setBrands(brandsRes.data || []);
+    } catch (err) {
+      console.error("Error loading forms:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function openNew() {

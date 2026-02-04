@@ -46,6 +46,9 @@ export default function InvoicesPage() {
     projectId: "",
     notes: "",
   });
+  
+  // Preview Modal State
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
@@ -55,43 +58,55 @@ export default function InvoicesPage() {
   }, []);
 
   async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
 
-    const { data: pu } = await supabase
-      .from("partner_users")
-      .select("*, partner:partners(*)")
-      .eq("auth_user_id", user.id)
-      .single();
+      const { data: pu } = await supabase
+        .from("partner_users")
+        .select("*, partner:partners(*)")
+        .eq("auth_user_id", user.id)
+        .single();
 
-    if (!pu) return;
-    setPartnerUser(pu);
+      if (!pu) { setLoading(false); return; }
+      
+      // Only admins can see invoices
+      if (pu.role !== "admin") {
+        setLoading(false);
+        window.location.href = "/partner";
+        return;
+      }
+      
+      setPartnerUser(pu);
 
-    // Get invoices
-    const { data: inv } = await supabase
-      .from("partner_invoices")
-      .select(`
-        *,
-        project:projects (name)
-      `)
-      .eq("partner_id", pu.partner_id)
-      .order("uploaded_at", { ascending: false });
+      // Get invoices
+      const { data: inv } = await supabase
+        .from("partner_invoices")
+        .select(`
+          *,
+          project:projects (name)
+        `)
+        .eq("partner_id", pu.partner_id)
+        .order("uploaded_at", { ascending: false });
 
-    setInvoices(inv || []);
+      setInvoices(inv || []);
 
-    // Get projects for dropdown (from accepted jobs)
-    const { data: jobs } = await supabase
-      .from("partner_jobs")
-      .select("project:projects (id, name)")
-      .eq("accepted_by_partner_id", pu.partner_id)
-      .not("project", "is", null);
+      // Get projects for dropdown (from accepted jobs)
+      const { data: jobs } = await supabase
+        .from("partner_jobs")
+        .select("project:projects (id, name)")
+        .eq("accepted_by_partner_id", pu.partner_id)
+        .not("project", "is", null);
 
-    const uniqueProjects = Array.from(
-      new Map(jobs?.map(j => [j.project?.id, j.project]).filter(p => p[1])).values()
-    );
-    setProjects(uniqueProjects);
-
-    setLoading(false);
+      const uniqueProjects = Array.from(
+        new Map(jobs?.map(j => [j.project?.id, j.project]).filter(p => p[1])).values()
+      );
+      setProjects(uniqueProjects);
+    } catch (err) {
+      console.error("Error loading invoices:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -109,11 +124,16 @@ export default function InvoicesPage() {
 
     setUploading(true);
 
-    // Upload file
-    const fileName = `invoices/${partnerUser.partner_id}/${Date.now()}_${uploadForm.file.name}`;
-    const { error: uploadError } = await supabase.storage
+    // Upload file - sanitize filename (remove umlauts, special chars)
+    const sanitizedName = uploadForm.file.name
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove diacritics
+      .replace(/[^a-zA-Z0-9.-]/g, '_'); // Replace special chars
+    const fileName = `invoices/${partnerUser.partner_id}/${Date.now()}_${sanitizedName}`;
+    const { data: uploadData, error: uploadError } = await supabase.storage
       .from("documents")
       .upload(fileName, uploadForm.file);
+    
+    console.log('[Upload] fileName:', fileName, 'result:', uploadData, 'error:', uploadError);
 
     if (uploadError) {
       toast.error("Fehler beim Hochladen");
@@ -165,7 +185,7 @@ export default function InvoicesPage() {
 
   const statusConfig: Record<string, { label: string; icon: any; class: string }> = {
     uploaded: { label: "Hochgeladen", icon: Clock, class: "text-yellow-400 bg-yellow-500/20" },
-    reviewed: { label: "In Prüfung", icon: Eye, class: "text-blue-400 bg-blue-500/20" },
+    reviewed: { label: "In Prüfung", icon: Eye, class: "text-[#fa432a] bg-[#fa432a]/20" },
     approved: { label: "Freigegeben", icon: CheckCircle, class: "text-green-400 bg-green-500/20" },
     paid: { label: "Bezahlt", icon: CheckCircle, class: "text-green-400 bg-green-500/20" },
   };
@@ -184,7 +204,7 @@ export default function InvoicesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <FileText className="w-7 h-7 text-blue-400" />
+            <FileText className="w-7 h-7 text-[#fa432a]" />
             Rechnungen
           </h1>
           <p className="text-neutral-400 mt-1">
@@ -210,55 +230,77 @@ export default function InvoicesPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {invoices.map((invoice) => {
-            const status = statusConfig[invoice.status] || statusConfig.uploaded;
-            const StatusIcon = status.icon;
+        <div className="card overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-neutral-800 bg-[#0a0a0a]">
+                <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium">Status</th>
+                <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium">Rechnungsnr.</th>
+                <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium hidden sm:table-cell">Datum</th>
+                <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium hidden md:table-cell">Projekt</th>
+                <th className="text-right text-xs text-neutral-500 uppercase py-3 px-4 font-medium">Betrag</th>
+                <th className="w-20 text-right text-xs text-neutral-500 uppercase py-3 px-4 font-medium">Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((invoice) => {
+                const status = statusConfig[invoice.status] || statusConfig.uploaded;
+                const StatusIcon = status.icon;
 
-            return (
-              <div key={invoice.id} className="card p-4 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-[#111] flex items-center justify-center">
-                    <FileText className="w-6 h-6 text-neutral-400" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-white">
-                        {invoice.invoice_number || `Rechnung vom ${formatDate(invoice.uploaded_at)}`}
-                      </p>
-                      <span className={`text-xs px-2 py-0.5 rounded flex items-center gap-1 ${status.class}`}>
+                return (
+                  <tr 
+                    key={invoice.id}
+                    className="border-b border-neutral-800/50 hover:bg-[#111] transition-colors"
+                  >
+                    <td className="py-3 px-4">
+                      <span className={`text-xs px-2 py-1 rounded inline-flex items-center gap-1 ${status.class}`}>
                         <StatusIcon className="w-3 h-3" />
                         {status.label}
                       </span>
-                    </div>
-                    <div className="flex items-center gap-3 mt-1 text-sm text-neutral-500">
-                      {invoice.project?.name && (
-                        <span>{invoice.project.name}</span>
-                      )}
-                      {invoice.invoice_date && (
-                        <span>Datum: {formatDate(invoice.invoice_date)}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <p className="font-semibold text-white">{formatCurrency(invoice.amount)}</p>
-                  </div>
-                  <a
-                    href={invoice.file_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 text-neutral-400 hover:text-blue-400 transition-colors"
-                    title="Herunterladen"
-                  >
-                    <Download className="w-5 h-5" />
-                  </a>
-                </div>
-              </div>
-            );
-          })}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="font-medium text-white">
+                        {invoice.invoice_number || `#${invoice.id.slice(0, 8)}`}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 hidden sm:table-cell">
+                      <span className="text-neutral-300 text-sm">
+                        {invoice.invoice_date ? formatDate(invoice.invoice_date) : formatDate(invoice.uploaded_at)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 hidden md:table-cell">
+                      <span className="text-neutral-400 text-sm">
+                        {invoice.project?.name || '–'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <span className="font-semibold text-white">{formatCurrency(invoice.amount)}</span>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setPreviewUrl(invoice.file_url)}
+                          className="p-1.5 text-neutral-500 hover:text-white rounded hover:bg-neutral-800"
+                          title="Vorschau"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <a
+                          href={invoice.file_url}
+                          download
+                          className="p-1.5 text-neutral-500 hover:text-white rounded hover:bg-neutral-800"
+                          title="Download"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Download className="w-4 h-4" />
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -283,12 +325,12 @@ export default function InvoicesPage() {
                   onClick={() => fileInputRef.current?.click()}
                   className={`w-full p-4 border-2 border-dashed rounded-lg text-center transition-colors ${
                     uploadForm.file 
-                      ? "border-blue-500 bg-blue-500/10" 
+                      ? "border-[#fa432a] bg-[#fa432a]/10" 
                       : "border-[#333] hover:border-[#444]"
                   }`}
                 >
                   {uploadForm.file ? (
-                    <span className="text-blue-400">{uploadForm.file.name}</span>
+                    <span className="text-[#fa432a]">{uploadForm.file.name}</span>
                   ) : (
                     <span className="text-neutral-500">Klicken um PDF auszuwählen</span>
                   )}
@@ -377,6 +419,47 @@ export default function InvoicesPage() {
                 Hochladen
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      {previewUrl && (
+        <div 
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+          onClick={() => setPreviewUrl(null)}
+        >
+          <div 
+            className="relative w-full max-w-5xl h-[90vh] bg-[#111] rounded-lg overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="absolute top-0 left-0 right-0 bg-[#111]/95 backdrop-blur p-4 flex items-center justify-between z-10">
+              <span className="text-white font-medium">Dokument-Vorschau</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewUrl}
+                  download
+                  className="btn-secondary text-sm flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Herunterladen
+                </a>
+                <button
+                  onClick={() => setPreviewUrl(null)}
+                  className="p-2 text-neutral-400 hover:text-white transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            
+            {/* PDF/Image Viewer */}
+            <iframe
+              src={previewUrl}
+              className="w-full h-full pt-16"
+              title="Dokument-Vorschau"
+            />
           </div>
         </div>
       )}

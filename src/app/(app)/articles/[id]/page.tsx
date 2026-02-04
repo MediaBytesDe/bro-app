@@ -75,20 +75,25 @@ export default function ArticleDetailPage() {
   }
 
   async function loadProduct(id: string) {
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .eq("id", id)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("id", id)
+        .single();
 
-    if (error || !data) {
-      toast.error("Artikel nicht gefunden");
-      router.push("/articles");
-      return;
+      if (error || !data) {
+        toast.error("Artikel nicht gefunden");
+        router.push("/articles");
+        return;
+      }
+
+      setProduct(data);
+    } catch (err) {
+      console.error("Error loading product:", err);
+    } finally {
+      setLoading(false);
     }
-
-    setProduct(data);
-    setLoading(false);
   }
 
   // Calculate all prices

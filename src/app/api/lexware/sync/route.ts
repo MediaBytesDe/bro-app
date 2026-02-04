@@ -78,7 +78,6 @@ export async function POST(request: Request) {
       results,
     });
   } catch (err) {
-    console.error("Lexware sync error:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Sync failed" },
       { status: 500 }

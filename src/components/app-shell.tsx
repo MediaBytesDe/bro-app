@@ -22,6 +22,7 @@ const allTabs = [
   { id: "calendar", path: "/calendar", label: "Kalender", icon: Calendar },
   { id: "forms", path: "/forms", label: "Formulare", icon: ClipboardList },
   { id: "subcontractors", path: "/subcontractors", label: "Subuntern.", icon: Wrench },
+  { id: "trades", path: "/trades", label: "Gewerke", icon: Briefcase },
   { id: "documents", path: "/documents", label: "Dokumente", icon: FolderOpen },
   { id: "skills", path: "/skills", label: "Skills", icon: Brain },
   { id: "logs", path: "/logs", label: "Logs", icon: FileText },
@@ -66,6 +67,7 @@ const desktopNav: NavItem[] = [
       { id: "documents", path: "/documents", label: "Dokumente", icon: FolderOpen, description: "Dateien & Uploads" },
       { id: "forms", path: "/forms", label: "Formulare", icon: ClipboardList, description: "Abnahmen & Protokolle" },
       { id: "subcontractors", path: "/subcontractors", label: "Subunternehmer", icon: Wrench, description: "Partner & Monteure" },
+      { id: "trades", path: "/trades", label: "Gewerke", icon: Wrench, description: "DC/AC-Montage, Elektro, etc." },
     ]
   },
   { 

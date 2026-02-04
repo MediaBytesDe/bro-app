@@ -96,7 +96,6 @@ export async function POST(request: Request) {
       lexwareQuoteId: result.id,
     });
   } catch (err) {
-    console.error("Lexware quote sync error:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Sync failed" },
       { status: 500 }

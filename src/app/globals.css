@@ -112,12 +112,29 @@ textarea.input {
     min-height: 36px;
   }
 }
+/* Base button styles */
+.btn-primary,
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 0.5rem;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .btn-primary {
-  background: var(--accent-gradient);
+  background: var(--accent-primary);
   color: white;
+  border: none;
 }
 .btn-primary:hover {
-  opacity: 0.9;
+  background: #d63a24;
 }
 .btn-primary:disabled {
   opacity: 0.5;
@@ -130,6 +147,7 @@ textarea.input {
 }
 .btn-secondary:hover {
   border-color: var(--accent-primary);
+  background: var(--bg-hover);
 }
 .btn-ghost {
   background: transparent;

@@ -48,13 +48,18 @@ export default function QuoteTemplatesPage() {
 
   async function loadData() {
     setLoading(true);
-    const [templatesRes, categoriesRes] = await Promise.all([
-      supabase.from("quote_templates").select("*").order("sort_order"),
-      supabase.from("quote_template_categories").select("*").order("sort_order"),
-    ]);
-    setTemplates(templatesRes.data || []);
-    setCategories(categoriesRes.data || []);
-    setLoading(false);
+    try {
+      const [templatesRes, categoriesRes] = await Promise.all([
+        supabase.from("quote_templates").select("*").order("sort_order"),
+        supabase.from("quote_template_categories").select("*").order("sort_order"),
+      ]);
+      setTemplates(templatesRes.data || []);
+      setCategories(categoriesRes.data || []);
+    } catch (err) {
+      console.error("Error loading templates:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function loadTemplates() {

@@ -2,11 +2,18 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { FolderOpen, Calendar } from "lucide-react";
+import { FolderOpen, Calendar, Briefcase } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
-export default async function CustomerProjectsPage() {
+interface PageProps {
+  searchParams: Promise<{ impersonate?: string }>;
+}
+
+export default async function CustomerProjectsPage({ searchParams }: PageProps) {
+  const params = await searchParams;
+  const impersonateId = params.impersonate;
   const supabase = await createClient();
+  const adminSupabase = createAdminClient();
   
   // Get current user
   const { data: { user } } = await supabase.auth.getUser();
@@ -15,25 +22,41 @@ export default async function CustomerProjectsPage() {
     redirect("/login");
   }
 
-  // Find customer by auth_user_id using service role for admin access
-  const adminSupabase = createAdminClient();
-
-  const { data: customer, error: customerError } = await adminSupabase
-    .from("customers")
-    .select("id")
-    .eq("auth_user_id", user.id)
+  // Get user profile to check if admin
+  const { data: profile } = await adminSupabase
+    .from("users")
+    .select("role")
+    .eq("auth_id", user.id)
     .single();
 
-  if (customerError || !customer) {
-    console.error("[CustomerProjects] Customer not found:", customerError);
-    return (
-      <div className="card p-8 text-center">
-        <p className="text-red-400">Kundenprofil nicht gefunden</p>
-        <p className="text-neutral-500 text-sm mt-2">
-          Bitte kontaktieren Sie uns, falls dieses Problem weiterhin besteht.
-        </p>
-      </div>
-    );
+  const isAdmin = profile?.role === "admin" || profile?.role === "superadmin";
+  const isImpersonating = isAdmin && !!impersonateId;
+
+  let customerId: string | null = null;
+
+  if (isImpersonating) {
+    // Admin impersonating - use the impersonate ID
+    customerId = impersonateId!;
+  } else {
+    // Normal customer - find their own record
+    const { data: customer, error: customerError } = await adminSupabase
+      .from("customers")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .single();
+
+    if (customerError || !customer) {
+      console.error("[CustomerProjects] Customer not found:", customerError);
+      return (
+        <div className="card p-8 text-center">
+          <p className="text-red-400">Kundenprofil nicht gefunden</p>
+          <p className="text-neutral-500 text-sm mt-2">
+            Bitte kontaktieren Sie uns, falls dieses Problem weiterhin besteht.
+          </p>
+        </div>
+      );
+    }
+    customerId = customer.id;
   }
 
   // Load all projects for this customer
@@ -42,12 +65,15 @@ export default async function CustomerProjectsPage() {
     .select(`
       id, name, slug, icon, description, workfolder_status, created_at
     `)
-    .eq("customer_id", customer.id)
+    .eq("customer_id", customerId)
     .order("created_at", { ascending: false });
 
   if (projectsError) {
     console.error("[CustomerProjects] Error loading projects:", projectsError);
   }
+
+  // Build impersonate query string for links
+  const impersonateQuery = isImpersonating ? `?impersonate=${customerId}` : "";
 
   return (
     <div className="space-y-6">
@@ -61,9 +87,9 @@ export default async function CustomerProjectsPage() {
       {!projects || projects.length === 0 ? (
         <div className="card p-12 text-center">
           <FolderOpen className="w-16 h-16 mx-auto text-neutral-600 mb-4" />
-          <h3 className="text-lg font-semibold text-white mb-2">Noch keine Projekte</h3>
+          <h3 className="text-lg font-medium text-white mb-2">Noch keine Projekte</h3>
           <p className="text-neutral-400">
-            Sobald wir ein Projekt für Sie anlegen, erscheint es hier.
+            Sobald Sie ein Projekt bei uns haben, erscheint es hier.
           </p>
         </div>
       ) : (
@@ -71,31 +97,29 @@ export default async function CustomerProjectsPage() {
           {projects.map((project) => (
             <Link
               key={project.id}
-              href={`/portal/projekte/${project.slug}`}
-              className="card p-5 hover:bg-[#1a1a1a] transition-colors group"
+              href={`/portal/projekte/${project.slug}${impersonateQuery}`}
+              className="card p-5 flex items-start gap-4 hover:bg-[#151515] transition-colors group"
             >
-              <div className="flex items-start gap-4">
-                <div className="text-4xl">{project.icon || "📁"}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-4">
-                    <h3 className="text-lg font-semibold text-white group-hover:text-[#fa432a] transition-colors">
-                      {project.name}
-                    </h3>
-                    <StatusBadge status={project.workfolder_status} />
-                  </div>
-                  
-                  {project.description && (
-                    <p className="text-neutral-400 text-sm mt-1 line-clamp-2">
-                      {project.description}
-                    </p>
-                  )}
-                  
-                  <div className="flex items-center gap-4 mt-3 text-xs text-neutral-500">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {formatDate(project.created_at)}
-                    </span>
-                  </div>
+              <div className="w-12 h-12 rounded-xl bg-[#fa432a]/10 flex items-center justify-center flex-shrink-0">
+                <Briefcase className="w-6 h-6 text-[#fa432a]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 mb-1">
+                  <h3 className="font-semibold text-white group-hover:text-[#fa432a] transition-colors truncate">
+                    {project.name}
+                  </h3>
+                  <StatusBadge status={project.workfolder_status} />
+                </div>
+                {project.description && (
+                  <p className="text-sm text-neutral-400 line-clamp-2 mb-2">
+                    {project.description}
+                  </p>
+                )}
+                <div className="flex items-center gap-4 text-xs text-neutral-500">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5" />
+                    Erstellt: {formatDate(project.created_at)}
+                  </span>
                 </div>
               </div>
             </Link>
@@ -119,7 +143,7 @@ function StatusBadge({ status }: { status: string | null }) {
   const info = statusMap[status || ""] || { label: status || "Offen", class: "bg-neutral-500/20 text-neutral-400" };
 
   return (
-    <span className={`text-xs px-2 py-1 rounded whitespace-nowrap ${info.class}`}>
+    <span className={`text-xs px-2 py-0.5 rounded ${info.class}`}>
       {info.label}
     </span>
   );

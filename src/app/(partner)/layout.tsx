@@ -10,7 +10,10 @@ export default async function PartnerLayout({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
+  console.log("[PartnerLayout] user:", user?.id, user?.email);
+
   if (!user) {
+    console.log("[PartnerLayout] No user, redirect to login");
     redirect("/login");
   }
 
@@ -32,8 +35,12 @@ export default async function PartnerLayout({
     .eq("auth_user_id", user.id)
     .single();
 
+  console.log("[PartnerLayout] partnerUser:", partnerUser);
+  console.log("[PartnerLayout] partnerError:", partnerError);
+
   // Not a partner user - redirect
   if (partnerError || !partnerUser) {
+    console.log("[PartnerLayout] Not a partner, redirect to /");
     redirect("/");
   }
 

@@ -76,23 +76,26 @@ export default function CronJobsPage() {
 
   async function loadJobs() {
     setLoading(true);
-    
-    // Note: This assumes a cron_jobs table exists
-    // If not, we'll create mock data for demo
-    const { data, error } = await supabase
-      .from("cron_jobs")
-      .select("*")
-      .order("name");
+    try {
+      // Note: This assumes a cron_jobs table exists
+      // If not, we'll create mock data for demo
+      const { data, error } = await supabase
+        .from("cron_jobs")
+        .select("*")
+        .order("name");
 
-    if (error) {
-      // Table doesn't exist - show empty state
-      console.log("Cron jobs table not found, showing empty state");
-      setJobs([]);
-    } else {
-      setJobs(data || []);
+      if (error) {
+        // Table doesn't exist - show empty state
+        console.log("Cron jobs table not found, showing empty state");
+        setJobs([]);
+      } else {
+        setJobs(data || []);
+      }
+    } catch (err) {
+      console.error("Error loading cron jobs:", err);
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   }
 
   function openNew() {

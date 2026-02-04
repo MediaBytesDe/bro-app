@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
-const LEXWARE_API_KEY = "1hgePA-GyqCIhCbxfkaB1kYlVvVj0kkTBJeJ6BR4GVZ-doqv";
+const LEXWARE_API_KEY = process.env.LEXWARE_API_KEY;
 const LEXWARE_BASE_URL = "https://api.lexoffice.io/v1";
 
 async function lexwareRequest(endpoint: string, options: RequestInit = {}) {
@@ -86,13 +86,33 @@ async function getOrCreateContact(customer: any): Promise<string> {
 
 export async function POST(request: NextRequest) {
   try {
+    // Auth check - only admin/mitarbeiter
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { data: profile } = await supabase
+      .from("users")
+      .select("role")
+      .eq("auth_id", user.id)
+      .single();
+
+    if (!profile || !["admin", "mitarbeiter", "superadmin"].includes(profile.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (!LEXWARE_API_KEY) {
+      return NextResponse.json({ error: "LEXWARE_API_KEY not configured" }, { status: 500 });
+    }
+
     const { quoteId } = await request.json();
     
     if (!quoteId) {
       return NextResponse.json({ error: "Quote ID fehlt" }, { status: 400 });
     }
-
-    const supabase = await createClient();
 
     // Load quote with items and customer
     const { data: quote, error: quoteError } = await supabase
@@ -237,10 +257,10 @@ export async function POST(request: NextRequest) {
       message: `Angebot ${finalizedQuote.voucherNumber} erfolgreich zu Lexware übertragen`,
     });
 
-  } catch (error: any) {
-    console.error("Lexware export error:", error);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Export fehlgeschlagen";
     return NextResponse.json(
-      { error: error.message || "Export fehlgeschlagen" },
+      { error: message },
       { status: 500 }
     );
   }

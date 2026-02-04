@@ -1,14 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { Spinner } from "@/components/ui/spinner";
-import { FileText, Download } from "lucide-react";
+import { FileText, Download, ChevronDown, ChevronRight } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export default function CustomerQuotesPage() {
   const { profile } = useAuth();
+  const searchParams = useSearchParams();
+  const impersonateId = searchParams.get("impersonate");
+  const isAdmin = profile?.role === "admin" || profile?.role === "superadmin";
+  const isImpersonating = isAdmin && !!impersonateId;
+  
   const [loading, setLoading] = useState(true);
   const [quotes, setQuotes] = useState<any[]>([]);
 
@@ -16,36 +23,46 @@ export default function CustomerQuotesPage() {
 
   useEffect(() => {
     loadQuotes();
-  }, [profile]);
+  }, [profile, impersonateId]);
 
   async function loadQuotes() {
-    if (!profile?.auth_id) return;
+    if (!profile?.auth_id) { setLoading(false); return; }
 
-    // Find customer by auth_user_id
-    const { data: customer } = await supabase
-      .from("customers")
-      .select("id")
-      .eq("auth_user_id", profile.auth_id)
-      .single();
+    try {
+      let customerId: string | null = null;
+      
+      if (isImpersonating && impersonateId) {
+        customerId = impersonateId;
+      } else {
+        const { data: customer } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("auth_user_id", profile.auth_id)
+          .single();
 
-    if (!customer) {
+        if (!customer) {
+          setLoading(false);
+          return;
+        }
+        customerId = customer.id;
+      }
+
+      const { data: quotesData } = await supabase
+        .from("wawi_quotes")
+        .select(`
+          id, title, package_title, lexware_quote_number, status, 
+          total_amount, quote_date, valid_until, lexware_quotation_id,
+          project:projects(name, slug)
+        `)
+        .eq("customer_id", customerId)
+        .order("created_at", { ascending: false });
+
+      setQuotes(quotesData || []);
+    } catch (err) {
+      console.error("Error loading quotes:", err);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    // Load all quotes for this customer
-    const { data: quotesData } = await supabase
-      .from("wawi_quotes")
-      .select(`
-        id, title, package_title, lexware_quote_number, status, 
-        total_amount, quote_date, valid_until, lexware_quotation_id,
-        project:projects(name, slug)
-      `)
-      .eq("customer_id", customer.id)
-      .order("created_at", { ascending: false });
-
-    setQuotes(quotesData || []);
-    setLoading(false);
   }
 
   if (loading) {
@@ -56,11 +73,9 @@ export default function CustomerQuotesPage() {
     );
   }
 
-  // Group quotes by status
   const openQuotes = quotes.filter(q => q.status === "sent");
   const acceptedQuotes = quotes.filter(q => q.status === "accepted");
   const rejectedQuotes = quotes.filter(q => q.status === "rejected");
-  const draftQuotes = quotes.filter(q => q.status === "draft");
 
   return (
     <div className="space-y-6">
@@ -80,20 +95,15 @@ export default function CustomerQuotesPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-8">
-          {/* Open Quotes */}
+        <div className="space-y-6">
           {openQuotes.length > 0 && (
-            <QuoteSection title="Offene Angebote" quotes={openQuotes} color="yellow" />
+            <QuoteTable title="Offene Angebote" quotes={openQuotes} color="yellow" />
           )}
-
-          {/* Accepted Quotes */}
           {acceptedQuotes.length > 0 && (
-            <QuoteSection title="Angenommene Angebote" quotes={acceptedQuotes} color="green" />
+            <QuoteTable title="Angenommene Angebote" quotes={acceptedQuotes} color="green" />
           )}
-
-          {/* Rejected Quotes */}
           {rejectedQuotes.length > 0 && (
-            <QuoteSection title="Abgelehnte Angebote" quotes={rejectedQuotes} color="red" collapsed />
+            <QuoteTable title="Abgelehnte Angebote" quotes={rejectedQuotes} color="red" collapsed />
           )}
         </div>
       )}
@@ -101,7 +111,7 @@ export default function CustomerQuotesPage() {
   );
 }
 
-function QuoteSection({ title, quotes, color, collapsed = false }: { 
+function QuoteTable({ title, quotes, color, collapsed = false }: { 
   title: string; 
   quotes: any[]; 
   color: string;
@@ -109,35 +119,12 @@ function QuoteSection({ title, quotes, color, collapsed = false }: {
 }) {
   const [isOpen, setIsOpen] = useState(!collapsed);
 
-  const colors: Record<string, string> = {
-    yellow: "text-yellow-400",
-    green: "text-green-400",
-    red: "text-red-400",
+  const dotColors: Record<string, string> = {
+    yellow: "bg-yellow-400",
+    green: "bg-green-400",
+    red: "bg-red-400",
   };
 
-  return (
-    <section>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 mb-4 text-sm font-semibold uppercase tracking-wide text-neutral-500 hover:text-white transition-colors"
-      >
-        <span className={`w-2 h-2 rounded-full bg-current ${colors[color]}`} />
-        {title} ({quotes.length})
-        <span className="text-xs">{isOpen ? "▼" : "▶"}</span>
-      </button>
-
-      {isOpen && (
-        <div className="grid gap-4">
-          {quotes.map((quote) => (
-            <QuoteCard key={quote.id} quote={quote} />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function QuoteCard({ quote }: { quote: any }) {
   const statusColors: Record<string, string> = {
     draft: "bg-neutral-500/20 text-neutral-400",
     sent: "bg-yellow-500/20 text-yellow-400",
@@ -153,52 +140,82 @@ function QuoteCard({ quote }: { quote: any }) {
   };
 
   return (
-    <div className="card p-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-mono text-neutral-500">
-              {quote.lexware_quote_number || `#${quote.id.slice(0, 6)}`}
-            </span>
-            <span className={`text-xs px-2 py-0.5 rounded ${statusColors[quote.status]}`}>
-              {statusLabels[quote.status]}
-            </span>
-          </div>
-          <h3 className="text-lg font-semibold text-white">
-            {quote.package_title || quote.title}
-          </h3>
-          {quote.project && (
-            <p className="text-sm text-neutral-500 mt-1">
-              Projekt: {quote.project.name}
-            </p>
+    <div className="card overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center gap-3 p-4 border-b border-neutral-800 hover:bg-[#111] transition-colors"
+      >
+        <span className={cn("w-2 h-2 rounded-full", dotColors[color])} />
+        <span className="font-semibold text-white">{title}</span>
+        <span className="text-sm text-neutral-500">({quotes.length})</span>
+        <span className="ml-auto">
+          {isOpen ? (
+            <ChevronDown className="w-4 h-4 text-neutral-500" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-neutral-500" />
           )}
-          <div className="flex gap-4 mt-2 text-xs text-neutral-500">
-            <span>Datum: {formatDate(quote.quote_date)}</span>
-            {quote.valid_until && (
-              <span>Gültig bis: {formatDate(quote.valid_until)}</span>
-            )}
-          </div>
-        </div>
+        </span>
+      </button>
 
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <p className="text-2xl font-bold text-white">
-              {new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(quote.total_amount)}
-            </p>
-            <p className="text-xs text-neutral-500">inkl. MwSt.</p>
-          </div>
-          
-          {quote.lexware_quotation_id && (
-            <button
-              onClick={() => window.open(`/api/lexware/quote-pdf?lexwareId=${quote.lexware_quotation_id}`, "_blank")}
-              className="btn btn-primary btn-sm"
-            >
-              <Download className="w-4 h-4" />
-              PDF
-            </button>
-          )}
-        </div>
-      </div>
+      {isOpen && (
+        <table className="w-full">
+          <thead>
+            <tr className="text-xs text-neutral-500 uppercase tracking-wide border-b border-neutral-800 bg-[#0a0a0a]">
+              <th className="text-left py-3 px-4">Angebot</th>
+              <th className="text-left py-3 px-4 w-28">Datum</th>
+              <th className="text-right py-3 px-4 w-32">Betrag</th>
+              <th className="text-left py-3 px-4 w-28">Status</th>
+              <th className="w-20"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {quotes.map((quote) => (
+              <tr
+                key={quote.id}
+                className="border-b border-neutral-800/50 last:border-0 hover:bg-[#111] transition-colors"
+              >
+                <td className="py-3 px-4">
+                  <div>
+                    <span className="text-xs font-mono text-neutral-500 mr-2">
+                      {quote.lexware_quote_number || `#${quote.id.slice(0, 6)}`}
+                    </span>
+                    <span className="text-white font-medium">
+                      {quote.package_title || quote.title}
+                    </span>
+                  </div>
+                  {quote.project && (
+                    <p className="text-xs text-neutral-500 mt-0.5">{quote.project.name}</p>
+                  )}
+                </td>
+                <td className="py-3 px-4 text-sm text-neutral-400">
+                  {formatDate(quote.quote_date)}
+                </td>
+                <td className="py-3 px-4 text-right">
+                  <span className="text-white font-bold">
+                    {new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(quote.total_amount)}
+                  </span>
+                </td>
+                <td className="py-3 px-4">
+                  <span className={cn("text-xs px-2 py-1 rounded whitespace-nowrap", statusColors[quote.status])}>
+                    {statusLabels[quote.status]}
+                  </span>
+                </td>
+                <td className="py-3 px-4">
+                  {quote.lexware_quotation_id && (
+                    <button
+                      onClick={() => window.open(`/api/lexware/quote-pdf?lexwareId=${quote.lexware_quotation_id}`, "_blank")}
+                      className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                    >
+                      <Download className="w-3 h-3" />
+                      PDF
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

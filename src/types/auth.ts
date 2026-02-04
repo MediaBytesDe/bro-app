@@ -62,9 +62,9 @@ export type PermissionValue = boolean | "assigned" | "own";
 
 // Route-Zugriff pro Rolle
 export const ROUTE_ACCESS: Record<string, UserRole[]> = {
-  "/": ["admin", "mitarbeiter", "subcontractor", "customer"],
-  "/projects": ["admin", "mitarbeiter", "subcontractor", "customer"],
-  "/projects/[slug]": ["admin", "mitarbeiter", "subcontractor", "customer"],
+  "/": ["admin", "mitarbeiter"],
+  "/projects": ["admin", "mitarbeiter"],
+  "/projects/[slug]": ["admin", "mitarbeiter"],
   "/leads": ["admin", "mitarbeiter"],
   "/leads/[id]": ["admin", "mitarbeiter"],
   "/customers": ["admin", "mitarbeiter"],
@@ -73,19 +73,36 @@ export const ROUTE_ACCESS: Record<string, UserRole[]> = {
   "/quotes/[id]": ["admin", "mitarbeiter", "customer"],
   "/subcontractors": ["admin", "mitarbeiter"],
   "/subcontractors/[id]": ["admin", "mitarbeiter"],
-  "/documents": ["admin", "mitarbeiter", "subcontractor", "customer"],
-  "/calendar": ["admin", "mitarbeiter", "subcontractor"],
+  "/documents": ["admin", "mitarbeiter"],
+  "/calendar": ["admin", "mitarbeiter"],
   "/team": ["admin", "mitarbeiter"],
   "/logs": ["admin", "mitarbeiter"],
   "/skills": ["admin", "mitarbeiter"],
   "/openclaw": ["admin"],
   "/settings": ["admin"],
-  // Customer Portal
-  "/portal": ["customer"],
-  "/portal/projekte": ["customer"],
-  "/portal/projekte/[slug]": ["customer"],
-  "/portal/angebote": ["customer"],
-  "/portal/dokumente": ["customer"],
+  // Customer Portal (admin can preview)
+  "/portal": ["customer", "admin"],
+  "/portal/projekte": ["customer", "admin"],
+  "/portal/projekte/[slug]": ["customer", "admin"],
+  "/portal/angebote": ["customer", "admin"],
+  "/portal/dokumente": ["customer", "admin"],
+  "/portal/termine": ["customer", "admin"],
+  "/portal/nachrichten": ["customer", "admin"],
+  "/portal/zahlungen": ["customer", "admin"],
+  "/portal/benachrichtigungen": ["customer", "admin"],
+  // Partner Portal
+  "/partner": ["subcontractor"],
+  "/partner/auftraege": ["subcontractor"],
+  "/partner/auftraege/[id]": ["subcontractor"],
+  "/partner/auftraege/[id]/rapport": ["subcontractor"],
+  "/partner/auftraege/[id]/chat": ["subcontractor"],
+  "/partner/aufgaben": ["subcontractor"],
+  "/partner/kalender": ["subcontractor"],
+  "/partner/rechnungen": ["subcontractor"],
+  "/partner/team": ["subcontractor"],
+  "/partner/einstellungen": ["subcontractor"],
+  "/partner/benachrichtigungen": ["subcontractor"],
+  "/partner/termin-anfragen": ["subcontractor"],
 };
 
 // User-Profil mit Rolle

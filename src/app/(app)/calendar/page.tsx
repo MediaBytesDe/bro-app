@@ -3,470 +3,684 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Modal } from "@/components/ui/modal";
 import { Spinner } from "@/components/ui/spinner";
+import { getTradeLabel, loadTradesFromDB } from "@/lib/trades";
 import {
   Calendar,
-  Plus,
-  Clock,
-  MapPin,
-  User,
   ChevronLeft,
   ChevronRight,
   Building2,
+  User,
+  Clock,
+  X,
+  FileText,
   Wrench,
 } from "lucide-react";
-import { formatDate } from "@/lib/utils";
-import type { Appointment, AppointmentType, AppointmentStatus, Customer, Project, Subcontractor } from "@/types/database";
 
-// Partial types for dropdown selections
-type CustomerOption = Pick<Customer, "id" | "company_name" | "first_name" | "last_name">;
-type ProjectOption = Pick<Project, "id" | "name" | "icon" | "slug">;
-type SubcontractorOption = Pick<Subcontractor, "id" | "company_name" | "trade">;
+type ViewMode = "day" | "week" | "month";
 
-const typeLabels: Record<AppointmentType, string> = {
-  aufmass: "Aufmaß",
-  vob_termin: "VOB-Termin",
-  montage_start: "Montage Start",
-  montage_end: "Montage Ende",
-  abnahme: "Abnahme",
-  nachbesserung: "Nachbesserung",
-  wartung: "Wartung",
-  beratung: "Beratung",
-  sonstiges: "Sonstiges",
-};
-
-const statusLabels: Record<AppointmentStatus, string> = {
-  scheduled: "Geplant",
-  confirmed: "Bestätigt",
-  in_progress: "Läuft",
-  completed: "Abgeschlossen",
-  cancelled: "Abgesagt",
-  rescheduled: "Verschoben",
-};
-
-const statusColors: Record<AppointmentStatus, string> = {
-  scheduled: "badge-info",
-  confirmed: "badge-success",
-  in_progress: "badge-warning",
-  completed: "badge-gray",
-  cancelled: "badge-error",
-  rescheduled: "badge-purple",
-};
-
-interface AppointmentWithRelations extends Appointment {
-  customers?: { company_name: string | null; first_name: string | null; last_name: string } | null;
-  projects?: { name: string; icon: string | null } | null;
+interface UnifiedAppointment {
+  id: string;
+  title: string;
+  date: string;
+  time_start: string | null;
+  time_end: string | null;
+  notes: string | null;
+  type: 'internal' | 'partner';
+  project_name: string | null;
+  project_id: string | null;
+  project_slug: string | null;
+  customer_name: string | null;
+  partner_name: string | null;
+  partner_id: string | null;
+  trade: string | null;
 }
 
 export default function CalendarPage() {
-  const [appointments, setAppointments] = useState<AppointmentWithRelations[]>([]);
-  const [customers, setCustomers] = useState<CustomerOption[]>([]);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [subcontractors, setSubcontractors] = useState<SubcontractorOption[]>([]);
+  const [appointments, setAppointments] = useState<UnifiedAppointment[]>([]);
+  const [projects, setProjects] = useState<{ id: string; name: string; parent_id: string | null }[]>([]);
+  const [partners, setPartners] = useState<{ id: string; company_name: string }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [showForm, setShowForm] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    title: "",
-    appointment_type: "beratung" as AppointmentType,
-    scheduled_date: new Date().toISOString().split("T")[0],
-    scheduled_time: "09:00",
-    duration_minutes: "60",
-    customer_id: "",
-    project_id: "",
-    subcontractor_ids: [] as string[],
-    location_address: "",
-    notes: "",
-  });
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [viewMode, setViewMode] = useState<ViewMode>("month");
+  
+  // Filters
+  const [projectFilter, setProjectFilter] = useState("");
+  const [partnerFilter, setPartnerFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"" | "internal" | "partner">("");
+  
+  // Modal
+  const [selectedAppointment, setSelectedAppointment] = useState<UnifiedAppointment | null>(null);
 
-  const router = useRouter();
   const supabase = createClient();
+
+  // Calculate date range based on view mode
+  const getDateRange = () => {
+    const start = new Date(currentDate);
+    const end = new Date(currentDate);
+    
+    if (viewMode === "day") {
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    } else if (viewMode === "week") {
+      const dayOfWeek = start.getDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday start
+      start.setDate(start.getDate() + diff);
+      start.setHours(0, 0, 0, 0);
+      end.setDate(start.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+    } else {
+      start.setDate(1);
+      start.setHours(0, 0, 0, 0);
+      end.setMonth(end.getMonth() + 1, 0);
+      end.setHours(23, 59, 59, 999);
+    }
+    
+    return { start, end };
+  };
 
   useEffect(() => {
     loadData();
-  }, [currentMonth]);
+  }, [currentDate, viewMode]);
 
   async function loadData() {
     setLoading(true);
+    try {
+      // Trades aus DB laden (für Labels)
+      await loadTradesFromDB(supabase, true);
+      
+      const { start, end } = getDateRange();
+      const startStr = start.toISOString().split('T')[0];
+      const endStr = end.toISOString().split('T')[0];
 
-    const startOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-    const endOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+      const { data: partnerAppts } = await supabase
+        .from("partner_job_appointments")
+        .select(`
+          id, title, date, time_start, time_end, notes,
+          job:partner_jobs!job_id (
+            id, title, trade,
+            project:projects!project_id (id, name, slug),
+            partner:partners!accepted_by_partner_id (id, company_name),
+            customer:projects!project_id (
+              customer:customers!customer_id (first_name, last_name)
+            )
+          )
+        `)
+        .gte("date", startStr)
+        .lte("date", endStr)
+        .order("date", { ascending: true });
 
-    const [appointmentsRes, customersRes, projectsRes, subcontractorsRes] = await Promise.all([
-      supabase
+      const { data: internalAppts } = await supabase
         .from("appointments")
-        .select("*, customers(company_name, first_name, last_name), projects(name, icon)")
-        .gte("start_time", startOfMonth.toISOString())
-        .lte("start_time", endOfMonth.toISOString())
-        .order("start_time", { ascending: true }),
-      supabase.from("customers").select("id, company_name, first_name, last_name").eq("status", "active"),
-      supabase.from("projects").select("id, name, icon, slug"),
-      supabase.from("subcontractors").select("id, company_name, trade").eq("status", "active"),
-    ]);
+        .select(`
+          id, title, start_time, end_time, description, location_address,
+          project:projects (id, name, slug),
+          customer:customers (first_name, last_name)
+        `)
+        .gte("start_time", start.toISOString())
+        .lte("start_time", end.toISOString())
+        .order("start_time", { ascending: true });
 
-    setAppointments(appointmentsRes.data || []);
-    setCustomers(customersRes.data || []);
-    setProjects(projectsRes.data || []);
-    setSubcontractors(subcontractorsRes.data || []);
-    setLoading(false);
-  }
+    const partnerList: UnifiedAppointment[] = (partnerAppts || []).map((a: any) => ({
+      id: a.id,
+      title: a.title,
+      date: a.date,
+      time_start: a.time_start,
+      time_end: a.time_end,
+      notes: a.notes,
+      type: 'partner' as const,
+      project_name: a.job?.project?.name || null,
+      project_id: a.job?.project?.id || null,
+      project_slug: a.job?.project?.slug || null,
+      customer_name: a.job?.customer?.customer 
+        ? `${a.job.customer.customer.first_name} ${a.job.customer.customer.last_name}`
+        : null,
+      partner_name: a.job?.partner?.company_name || null,
+      partner_id: a.job?.partner?.id || null,
+      trade: a.job?.trade || null,
+    }));
 
-  function openNew(date?: Date) {
-    setForm({
-      title: "",
-      appointment_type: "beratung",
-      scheduled_date: (date || new Date()).toISOString().split("T")[0],
-      scheduled_time: "09:00",
-      duration_minutes: "60",
-      customer_id: "",
-      project_id: "",
-      subcontractor_ids: [],
-      location_address: "",
-      notes: "",
+    const internalList: UnifiedAppointment[] = (internalAppts || []).map((a: any) => ({
+      id: a.id,
+      title: a.title,
+      date: new Date(a.start_time).toISOString().split('T')[0],
+      time_start: new Date(a.start_time).toTimeString().slice(0, 5),
+      time_end: a.end_time ? new Date(a.end_time).toTimeString().slice(0, 5) : null,
+      notes: a.description,
+      type: 'internal' as const,
+      project_name: a.project?.name || null,
+      project_id: a.project?.id || null,
+      project_slug: a.project?.slug || null,
+      customer_name: a.customer 
+        ? `${a.customer.first_name} ${a.customer.last_name}`
+        : null,
+      partner_name: null,
+      partner_id: null,
+      trade: null,
+    }));
+
+    const allAppts = [...partnerList, ...internalList].sort((a, b) => {
+      const dateCompare = a.date.localeCompare(b.date);
+      if (dateCompare !== 0) return dateCompare;
+      return (a.time_start || '').localeCompare(b.time_start || '');
     });
-    setShowForm(true);
-  }
 
-  async function saveAppointment(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
+    setAppointments(allAppts);
 
-    // Combine date and time into start_time
-    const startTime = new Date(`${form.scheduled_date}T${form.scheduled_time}`);
-    const durationMs = (parseInt(form.duration_minutes) || 60) * 60 * 1000;
-    const endTime = new Date(startTime.getTime() + durationMs);
+    const { data: projectsData } = await supabase
+      .from("projects")
+      .select("id, name, parent_id")
+      .order("name");
+    setProjects(projectsData || []);
 
-    const { error } = await supabase.from("appointments").insert({
-      title: form.title || typeLabels[form.appointment_type].replace(/^[^\s]+\s/, ""),
-      appointment_type: form.appointment_type,
-      start_time: startTime.toISOString(),
-      end_time: endTime.toISOString(),
-      customer_id: form.customer_id || null,
-      project_id: form.project_id || null,
-      subcontractor_ids: form.subcontractor_ids.length > 0 ? form.subcontractor_ids : null,
-      location_address: form.location_address || null,
-      description: form.notes || null,
-      status: "scheduled",
-    });
-
-    setSaving(false);
-
-    if (error) {
-      alert("Fehler beim Speichern: " + error.message);
-      return;
+    const { data: partnersData } = await supabase
+        .from("partners")
+        .select("id, company_name")
+        .eq("active", true)
+        .order("company_name");
+      setPartners(partnersData || []);
+    } catch (err) {
+      console.error("Error loading calendar:", err);
+    } finally {
+      setLoading(false);
     }
-
-    setShowForm(false);
-    await loadData();
   }
 
-  function prevMonth() {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+  function navigate(direction: number) {
+    const newDate = new Date(currentDate);
+    if (viewMode === "day") {
+      newDate.setDate(newDate.getDate() + direction);
+    } else if (viewMode === "week") {
+      newDate.setDate(newDate.getDate() + (direction * 7));
+    } else {
+      newDate.setMonth(newDate.getMonth() + direction);
+    }
+    setCurrentDate(newDate);
   }
 
-  function nextMonth() {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+  function goToToday() {
+    setCurrentDate(new Date());
   }
 
-  // Group appointments by date
-  const appointmentsByDate = appointments.reduce((acc, apt) => {
-    const date = new Date(apt.start_time).toISOString().split("T")[0];
-    if (!acc[date]) acc[date] = [];
-    acc[date].push(apt);
+  // Hierarchy filter
+  const getMatchingProjectIds = (filterId: string): Set<string> => {
+    const ids = new Set<string>();
+    ids.add(filterId);
+    projects.forEach((p) => {
+      if (p.parent_id === filterId) ids.add(p.id);
+    });
+    return ids;
+  };
+
+  const filtered = appointments.filter((a) => {
+    if (projectFilter) {
+      const matchingIds = getMatchingProjectIds(projectFilter);
+      if (!a.project_id || !matchingIds.has(a.project_id)) return false;
+    }
+    if (partnerFilter && a.partner_id !== partnerFilter) return false;
+    if (typeFilter && a.type !== typeFilter) return false;
+    return true;
+  });
+
+  const groupedByDate = filtered.reduce((acc, apt) => {
+    if (!acc[apt.date]) acc[apt.date] = [];
+    acc[apt.date].push(apt);
     return acc;
-  }, {} as Record<string, AppointmentWithRelations[]>);
+  }, {} as Record<string, UnifiedAppointment[]>);
 
-  // Generate calendar days
-  const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-  const firstDayOfWeek = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
-  const adjustedFirstDay = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1; // Monday = 0
-
-  const calendarDays = [];
-  for (let i = 0; i < adjustedFirstDay; i++) {
-    calendarDays.push(null);
-  }
-  for (let i = 1; i <= daysInMonth; i++) {
-    calendarDays.push(i);
-  }
+  // Navigation label
+  const getNavigationLabel = () => {
+    if (viewMode === "day") {
+      return currentDate.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    } else if (viewMode === "week") {
+      const { start, end } = getDateRange();
+      return `${start.toLocaleDateString("de-DE", { day: "numeric", month: "short" })} – ${end.toLocaleDateString("de-DE", { day: "numeric", month: "short", year: "numeric" })}`;
+    }
+    return currentDate.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+  };
 
   const today = new Date();
-  const isToday = (day: number) =>
-    day === today.getDate() &&
-    currentMonth.getMonth() === today.getMonth() &&
-    currentMonth.getFullYear() === today.getFullYear();
+  const todayStr = today.toISOString().split('T')[0];
+  const isToday = (dateStr: string) => dateStr === todayStr;
 
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-white flex items-center gap-2">
-          <Calendar className="w-6 h-6 text-orange-400" />
-          Kalender
-        </h1>
-        <button onClick={() => openNew()} className="btn btn-primary">
-          <Plus className="w-4 h-4" />
-          Neuer Termin
-        </button>
-      </div>
+  // Week view helpers
+  const getWeekDays = () => {
+    const { start } = getDateRange();
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      days.push(d);
+    }
+    return days;
+  };
 
-      {/* Month Navigation */}
-      <div className="flex items-center justify-between">
-        <button onClick={prevMonth} className="btn btn-ghost btn-icon">
-          <ChevronLeft className="w-5 h-5" />
-        </button>
-        <h2 className="text-lg font-medium text-white">
-          {currentMonth.toLocaleDateString("de-DE", { month: "long", year: "numeric" })}
-        </h2>
-        <button onClick={nextMonth} className="btn btn-ghost btn-icon">
-          <ChevronRight className="w-5 h-5" />
-        </button>
-      </div>
+  // Month view helpers  
+  const getMonthDays = () => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDayOfWeek = new Date(year, month, 1).getDay();
+    const adjustedFirstDay = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1;
+    
+    const days: (Date | null)[] = [];
+    for (let i = 0; i < adjustedFirstDay; i++) days.push(null);
+    for (let i = 1; i <= daysInMonth; i++) days.push(new Date(year, month, i));
+    return days;
+  };
 
-      {loading ? (
-        <div className="text-center py-12">
-          <Spinner className="mx-auto" />
-          <p className="text-neutral-500 mt-4">Lade Termine...</p>
+  // Appointment card component
+  const AppointmentCard = ({ apt, compact = false }: { apt: UnifiedAppointment; compact?: boolean }) => (
+    <div
+      onClick={() => setSelectedAppointment(apt)}
+      className={`${compact ? 'text-xs px-1.5 py-1' : 'p-3'} rounded-lg cursor-pointer transition-all hover:ring-1 hover:ring-neutral-700 ${
+        apt.type === 'partner' ? "bg-[#fa432a]/10 hover:bg-[#fa432a]/15" : "bg-blue-500/10 hover:bg-blue-500/15"
+      }`}
+    >
+      {compact ? (
+        <div>
+          <div className={`truncate font-medium ${apt.type === 'partner' ? 'text-[#fa432a]' : 'text-blue-400'}`}>
+            {apt.time_start?.slice(0, 5)} {apt.title}
+          </div>
+          {apt.customer_name && (
+            <div className="truncate text-neutral-500 text-[10px]">{apt.customer_name}</div>
+          )}
         </div>
       ) : (
         <>
-          {/* Calendar Grid */}
-          <div className="card overflow-hidden">
-            {/* Weekday Headers */}
-            <div className="grid grid-cols-7 border-b border-[#1f1f1f]">
-              {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((day) => (
-                <div key={day} className="p-2 text-center text-xs font-medium text-neutral-500">
-                  {day}
-                </div>
-              ))}
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-white text-sm truncate">{apt.title}</p>
+              {apt.project_name && (
+                <p className="text-xs text-neutral-400 truncate">{apt.project_name}</p>
+              )}
             </div>
+            <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${
+              apt.type === 'partner' ? "bg-[#fa432a]/20 text-[#fa432a]" : "bg-blue-500/20 text-blue-400"
+            }`}>
+              {apt.type === 'partner' ? 'Partner' : 'Intern'}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-3 mt-2 text-xs text-neutral-400">
+            {apt.time_start && (
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {apt.time_start.slice(0, 5)}{apt.time_end && ` – ${apt.time_end.slice(0, 5)}`}
+              </span>
+            )}
+            {apt.partner_name && (
+              <span className="flex items-center gap-1">
+                <Building2 className="w-3 h-3" />
+                {apt.partner_name}
+              </span>
+            )}
+            {apt.customer_name && (
+              <span className="flex items-center gap-1">
+                <User className="w-3 h-3" />
+                {apt.customer_name}
+              </span>
+            )}
+          </div>
+          {apt.notes && <p className="text-xs text-neutral-500 mt-2 truncate">{apt.notes}</p>}
+        </>
+      )}
+    </div>
+  );
 
-            {/* Days */}
-            <div className="grid grid-cols-7">
-              {calendarDays.map((day, idx) => {
-                if (day === null) {
-                  return <div key={`empty-${idx}`} className="p-2 min-h-[80px] bg-[#0a0a0a]" />;
-                }
-
-                const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                const dayAppointments = appointmentsByDate[dateStr] || [];
-
-                return (
-                  <div
-                    key={day}
-                    onClick={() => openNew(new Date(dateStr))}
-                    className={`p-2 min-h-[80px] border-t border-r border-[#1f1f1f] cursor-pointer hover:bg-[#1a1a1a] transition-colors ${
-                      isToday(day) ? "bg-orange-500/10" : ""
-                    }`}
-                  >
-                    <span
-                      className={`text-sm ${
-                        isToday(day)
-                          ? "bg-orange-500 text-white w-6 h-6 rounded-full flex items-center justify-center"
-                          : "text-neutral-400"
-                      }`}
-                    >
-                      {day}
-                    </span>
-                    <div className="mt-1 space-y-1">
-                      {dayAppointments.slice(0, 3).map((apt) => (
-                        <div
-                          key={apt.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            // Could open detail modal here
-                          }}
-                          className={`text-xs p-1 rounded truncate ${
-                            apt.status === "confirmed"
-                              ? "bg-green-500/20 text-green-400"
-                              : apt.status === "cancelled"
-                              ? "bg-red-500/20 text-red-400"
-                              : "bg-blue-500/20 text-blue-400"
-                          }`}
-                        >
-                          {new Date(apt.start_time).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} {apt.title}
-                        </div>
-                      ))}
-                      {dayAppointments.length > 3 && (
-                        <div className="text-xs text-neutral-500">
-                          +{dayAppointments.length - 3} weitere
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+  // Detail Modal
+  const AppointmentModal = () => {
+    if (!selectedAppointment) return null;
+    const apt = selectedAppointment;
+    
+    return (
+      <div 
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        onClick={() => setSelectedAppointment(null)}
+      >
+        <div 
+          className="bg-[#111] border border-neutral-800 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className={`p-4 border-b border-neutral-800 ${
+            apt.type === 'partner' ? "bg-[#fa432a]/10" : "bg-blue-500/10"
+          }`}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <span className={`text-xs px-2 py-0.5 rounded ${
+                  apt.type === 'partner' ? "bg-[#fa432a]/20 text-[#fa432a]" : "bg-blue-500/20 text-blue-400"
+                }`}>
+                  {apt.type === 'partner' ? 'Partner-Termin' : 'Interner Termin'}
+                </span>
+                <h2 className="text-xl font-semibold text-white mt-2">{apt.title}</h2>
+              </div>
+              <button 
+                onClick={() => setSelectedAppointment(null)}
+                className="text-neutral-400 hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
           </div>
-
-          {/* Upcoming List */}
-          <div className="card">
-            <div className="p-4 border-b border-[#1f1f1f]">
-              <h3 className="font-medium text-white">Anstehende Termine</h3>
+          
+          {/* Content */}
+          <div className="p-4 space-y-4">
+            {/* Date & Time */}
+            <div className="flex items-center gap-3 text-neutral-300">
+              <Calendar className="w-5 h-5 text-neutral-500" />
+              <div>
+                <p className="font-medium">
+                  {new Date(apt.date).toLocaleDateString('de-DE', { 
+                    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' 
+                  })}
+                </p>
+                {apt.time_start && (
+                  <p className="text-sm text-neutral-400">
+                    {apt.time_start.slice(0, 5)} Uhr
+                    {apt.time_end && ` – ${apt.time_end.slice(0, 5)} Uhr`}
+                  </p>
+                )}
+              </div>
             </div>
-            <div className="divide-y divide-[#1f1f1f] max-h-[300px] overflow-y-auto">
-              {appointments.filter((a) => a.status !== "cancelled" && a.status !== "completed").length === 0 ? (
-                <p className="p-4 text-neutral-500 text-center">Keine anstehenden Termine</p>
-              ) : (
-                appointments
-                  .filter((a) => a.status !== "cancelled" && a.status !== "completed")
-                  .map((apt) => (
-                    <div key={apt.id} className="p-3 flex items-center gap-4">
-                      <div className="text-center">
-                        <p className="text-2xl font-bold text-white">
-                          {new Date(apt.start_time).getDate()}
-                        </p>
-                        <p className="text-xs text-neutral-500">
-                          {new Date(apt.start_time).toLocaleDateString("de-DE", { month: "short" })}
-                        </p>
+            
+            {/* Project */}
+            {apt.project_name && (
+              <div className="flex items-center gap-3 text-neutral-300">
+                <FileText className="w-5 h-5 text-neutral-500" />
+                <div>
+                  <p className="text-sm text-neutral-500">Projekt</p>
+                  {apt.project_slug ? (
+                    <a 
+                      href={`/projects/${apt.project_slug}`}
+                      className="font-medium text-[#fa432a] hover:underline"
+                    >
+                      {apt.project_name}
+                    </a>
+                  ) : (
+                    <p className="font-medium">{apt.project_name}</p>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Customer */}
+            {apt.customer_name && (
+              <div className="flex items-center gap-3 text-neutral-300">
+                <User className="w-5 h-5 text-neutral-500" />
+                <div>
+                  <p className="text-sm text-neutral-500">Kunde</p>
+                  <p className="font-medium">{apt.customer_name}</p>
+                </div>
+              </div>
+            )}
+            
+            {/* Partner */}
+            {apt.partner_name && (
+              <div className="flex items-center gap-3 text-neutral-300">
+                <Building2 className="w-5 h-5 text-neutral-500" />
+                <div>
+                  <p className="text-sm text-neutral-500">Partner</p>
+                  <p className="font-medium">{apt.partner_name}</p>
+                </div>
+              </div>
+            )}
+            
+            {/* Trade */}
+            {apt.trade && (
+              <div className="flex items-center gap-3 text-neutral-300">
+                <Wrench className="w-5 h-5 text-neutral-500" />
+                <div>
+                  <p className="text-sm text-neutral-500">Gewerk</p>
+                  <p className="font-medium">{getTradeLabel(apt.trade)}</p>
+                </div>
+              </div>
+            )}
+            
+            {/* Notes */}
+            {apt.notes && (
+              <div className="pt-3 border-t border-neutral-800">
+                <p className="text-sm text-neutral-500 mb-1">Notizen</p>
+                <p className="text-neutral-300 whitespace-pre-wrap">{apt.notes}</p>
+              </div>
+            )}
+          </div>
+          
+          {/* Footer */}
+          <div className="p-4 border-t border-neutral-800 flex justify-end">
+            <button 
+              onClick={() => setSelectedAppointment(null)}
+              className="btn-secondary px-4 py-2"
+            >
+              Schließen
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Detail Modal */}
+      <AppointmentModal />
+      
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <Calendar className="w-7 h-7 text-[#fa432a]" />
+            Kalender
+          </h1>
+          <p className="text-neutral-400 mt-1 text-sm">{filtered.length} Termine</p>
+        </div>
+        
+        {/* Filters */}
+        <div className="flex items-center gap-2 text-sm">
+          <select
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+            className="bg-neutral-900 border border-neutral-800 text-neutral-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-neutral-700"
+          >
+            <option value="">Projekt</option>
+            {projects.filter(p => !p.parent_id).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+            {projects.filter(p => p.parent_id).map((p) => (
+              <option key={p.id} value={p.id}>{"  "}- {p.name}</option>
+            ))}
+          </select>
+          <select
+            value={partnerFilter}
+            onChange={(e) => setPartnerFilter(e.target.value)}
+            className="bg-neutral-900 border border-neutral-800 text-neutral-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-neutral-700"
+          >
+            <option value="">Partner</option>
+            {partners.map((p) => (
+              <option key={p.id} value={p.id}>{p.company_name}</option>
+            ))}
+          </select>
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
+            className="bg-neutral-900 border border-neutral-800 text-neutral-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-neutral-700"
+          >
+            <option value="">Typ</option>
+            <option value="internal">Intern</option>
+            <option value="partner">Partner</option>
+          </select>
+          {(projectFilter || partnerFilter || typeFilter) && (
+            <button
+              onClick={() => { setProjectFilter(""); setPartnerFilter(""); setTypeFilter(""); }}
+              className="text-neutral-500 hover:text-white px-1"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Navigation & View Toggle */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <button onClick={() => navigate(-1)} className="btn-secondary p-2">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <button onClick={() => navigate(1)} className="btn-secondary p-2">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+          <button onClick={goToToday} className="btn-secondary px-3 py-1.5 text-sm">
+            Heute
+          </button>
+          <span className="text-white font-medium ml-2">{getNavigationLabel()}</span>
+        </div>
+        
+        {/* View Toggle */}
+        <div className="flex bg-neutral-900 rounded-lg p-0.5 border border-neutral-800">
+          {(["day", "week", "month"] as ViewMode[]).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                viewMode === mode
+                  ? "bg-[#fa432a] text-white"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              {mode === "day" ? "Tag" : mode === "week" ? "Woche" : "Monat"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <Spinner />
+        </div>
+      ) : (
+        <>
+          {/* Day View */}
+          {viewMode === "day" && (
+            <div className="card p-4">
+              <div className="space-y-3">
+                {filtered.length === 0 ? (
+                  <p className="text-neutral-500 text-center py-12">Keine Termine an diesem Tag</p>
+                ) : (
+                  filtered.map((apt) => <AppointmentCard key={apt.id} apt={apt} />)
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Week View */}
+          {viewMode === "week" && (
+            <div className="card overflow-hidden">
+              <div className="grid grid-cols-7 border-b border-neutral-800">
+                {getWeekDays().map((day) => {
+                  const dateStr = day.toISOString().split('T')[0];
+                  return (
+                    <div
+                      key={dateStr}
+                      className={`p-2 text-center border-r border-neutral-800 last:border-r-0 ${
+                        isToday(dateStr) ? "bg-[#fa432a]/10" : ""
+                      }`}
+                    >
+                      <div className="text-xs text-neutral-500">
+                        {day.toLocaleDateString("de-DE", { weekday: "short" })}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-white truncate">{apt.title}</p>
-                        <div className="flex items-center gap-3 text-sm text-neutral-400">
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {new Date(apt.start_time).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                          {apt.customers && (
-                            <span className="flex items-center gap-1">
-                              <Building2 className="w-3 h-3" />
-                              {apt.customers.company_name || apt.customers.last_name}
-                            </span>
+                      <div className={`text-lg font-medium ${isToday(dateStr) ? "text-[#fa432a]" : "text-white"}`}>
+                        {day.getDate()}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="grid grid-cols-7 min-h-[400px]">
+                {getWeekDays().map((day) => {
+                  const dateStr = day.toISOString().split('T')[0];
+                  const dayAppts = groupedByDate[dateStr] || [];
+                  return (
+                    <div
+                      key={dateStr}
+                      className={`p-2 border-r border-neutral-800 last:border-r-0 ${
+                        isToday(dateStr) ? "bg-[#fa432a]/5" : ""
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        {dayAppts.map((apt) => (
+                          <AppointmentCard key={apt.id} apt={apt} compact />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Month View */}
+          {viewMode === "month" && (
+            <div className="grid lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 card overflow-hidden">
+                <div className="grid grid-cols-7 border-b border-neutral-800 bg-[#0a0a0a]">
+                  {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((d) => (
+                    <div key={d} className="p-2 text-center text-xs font-medium text-neutral-500">{d}</div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7">
+                  {getMonthDays().map((day, idx) => {
+                    if (!day) {
+                      return <div key={`empty-${idx}`} className="p-2 min-h-[80px] bg-[#0a0a0a] border-b border-r border-neutral-800/50" />;
+                    }
+                    const dateStr = day.toISOString().split('T')[0];
+                    const dayAppts = groupedByDate[dateStr] || [];
+                    return (
+                      <div
+                        key={dateStr}
+                        className={`p-2 min-h-[80px] border-b border-r border-neutral-800/50 ${
+                          isToday(dateStr) ? "bg-[#fa432a]/10" : dayAppts.length > 0 ? "bg-[#111]" : ""
+                        }`}
+                      >
+                        <div className={`text-sm font-medium mb-1 ${isToday(dateStr) ? "text-[#fa432a]" : "text-neutral-400"}`}>
+                          {day.getDate()}
+                        </div>
+                        <div className="space-y-1">
+                          {dayAppts.slice(0, 3).map((apt) => (
+                            <AppointmentCard key={apt.id} apt={apt} compact />
+                          ))}
+                          {dayAppts.length > 3 && (
+                            <div className="text-xs text-neutral-500">+{dayAppts.length - 3} mehr</div>
                           )}
                         </div>
                       </div>
-                      <span className={`badge ${statusColors[apt.status || "scheduled"]}`}>
-                        {statusLabels[apt.status || "scheduled"]}
-                      </span>
-                    </div>
-                  ))
-              )}
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Side list */}
+              <div className="card p-4 h-fit max-h-[600px] overflow-y-auto">
+                <h3 className="font-semibold text-white mb-4">Termine</h3>
+                {Object.keys(groupedByDate).length === 0 ? (
+                  <p className="text-neutral-500 text-center py-8">Keine Termine</p>
+                ) : (
+                  <div className="space-y-4">
+                    {Object.keys(groupedByDate).sort().map((date) => (
+                      <div key={date}>
+                        <div className="text-xs text-neutral-500 uppercase mb-2">
+                          {new Date(date).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'short' })}
+                        </div>
+                        <div className="space-y-2">
+                          {groupedByDate[date].map((apt) => <AppointmentCard key={apt.id} apt={apt} />)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </>
       )}
-
-      {/* New Appointment Modal */}
-      <Modal open={showForm} onClose={() => setShowForm(false)} title="Neuer Termin">
-        <form onSubmit={saveAppointment} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="form-label">Titel</label>
-              <input
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                className="input"
-                placeholder="z.B. Aufmaß bei Müller"
-              />
-            </div>
-            <div>
-              <label className="form-label">Terminart</label>
-              <select
-                value={form.appointment_type}
-                onChange={(e) => setForm({ ...form, appointment_type: e.target.value as AppointmentType })}
-                className="input"
-              >
-                {Object.entries(typeLabels).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="form-label">Dauer (Min.)</label>
-              <input
-                type="number"
-                value={form.duration_minutes}
-                onChange={(e) => setForm({ ...form, duration_minutes: e.target.value })}
-                className="input"
-                min="15"
-                step="15"
-              />
-            </div>
-            <div>
-              <label className="form-label">Datum</label>
-              <input
-                type="date"
-                value={form.scheduled_date}
-                onChange={(e) => setForm({ ...form, scheduled_date: e.target.value })}
-                className="input"
-                required
-              />
-            </div>
-            <div>
-              <label className="form-label">Uhrzeit</label>
-              <input
-                type="time"
-                value={form.scheduled_time}
-                onChange={(e) => setForm({ ...form, scheduled_time: e.target.value })}
-                className="input"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="form-label">Kunde</label>
-              <select
-                value={form.customer_id}
-                onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
-                className="input"
-              >
-                <option value="">-- Optional --</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.company_name || `${c.first_name || ""} ${c.last_name}`.trim()}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="form-label">Projekt</label>
-              <select
-                value={form.project_id}
-                onChange={(e) => setForm({ ...form, project_id: e.target.value })}
-                className="input"
-              >
-                <option value="">-- Optional --</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="form-label">Adresse</label>
-            <input
-              value={form.location_address}
-              onChange={(e) => setForm({ ...form, location_address: e.target.value })}
-              className="input"
-              placeholder="Straße, PLZ Ort"
-            />
-          </div>
-
-          <div>
-            <label className="form-label">Notizen</label>
-            <textarea
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              rows={2}
-              className="input"
-            />
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <button type="submit" disabled={saving} className="btn btn-primary flex-1">
-              {saving ? <Spinner className="!w-5 !h-5" /> : <Plus className="w-4 h-4" />}
-              {saving ? "Speichern..." : "Termin erstellen"}
-            </button>
-            <button type="button" onClick={() => setShowForm(false)} className="btn btn-secondary flex-1">
-              Abbrechen
-            </button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 }

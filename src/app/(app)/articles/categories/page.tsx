@@ -49,19 +49,24 @@ export default function CategoriesPage() {
   }, []);
 
   async function loadCategories() {
-    const { data, error } = await supabase
-      .from("product_categories")
-      .select("*")
-      .order("sort_order")
-      .order("name");
-    
-    if (data) {
-      setCategories(data);
-      // Expand all main categories
-      const mainIds = data.filter(c => !c.parent_id).map(c => c.id);
-      setExpanded(new Set(mainIds));
+    try {
+      const { data, error } = await supabase
+        .from("product_categories")
+        .select("*")
+        .order("sort_order")
+        .order("name");
+      
+      if (data) {
+        setCategories(data);
+        // Expand all main categories
+        const mainIds = data.filter(c => !c.parent_id).map(c => c.id);
+        setExpanded(new Set(mainIds));
+      }
+    } catch (err) {
+      console.error("Error loading categories:", err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   // Build tree

@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { toast } from "sonner";
+import { getTradeLabel, loadTradesFromDB } from "@/lib/trades";
 
 interface Job {
   id: string;
@@ -37,22 +38,22 @@ interface Job {
   status: string;
   accepted_by_partner_id: string;
   assigned_to_user_id: string;
+  partner_scheduled_date: string | null;
+  partner_scheduled_time: string | null;
+  partner_scheduled_notes: string | null;
   project: {
     id: string;
     name: string;
     slug: string;
-    size_kwp: number;
-    modules_count: number;
-    module_type: string;
-    inverter_type: string;
-    battery_type: string;
-    roof_type: string;
     customer: {
       id: string;
-      name: string;
+      first_name: string;
+      last_name: string;
       email: string;
       phone: string;
-      address: string;
+      mobile: string;
+      street: string;
+      house_number: string;
       city: string;
       postal_code: string;
     };
@@ -94,6 +95,17 @@ export default function JobDetailPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [actionLoading, setActionLoading] = useState(false);
+  
+  // Termine-State (mehrere Termine pro Auftrag)
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [editingAppointment, setEditingAppointment] = useState<string | null>(null); // id oder 'new'
+  const [appointmentForm, setAppointmentForm] = useState({
+    title: '',
+    date: '',
+    time_start: '',
+    time_end: '',
+    notes: ''
+  });
 
   const supabase = createClient();
 
@@ -102,18 +114,22 @@ export default function JobDetailPage() {
   }, [jobId]);
 
   async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      // Trades aus DB laden (für Labels) - force reload beim ersten Mal
+      await loadTradesFromDB(supabase, true);
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
 
-    // Get partner user
-    const { data: pu } = await supabase
-      .from("partner_users")
-      .select("*, partner:partners(*)")
-      .eq("auth_user_id", user.id)
-      .single();
+      // Get partner user
+      const { data: pu } = await supabase
+        .from("partner_users")
+        .select("*, partner:partners(*)")
+        .eq("auth_user_id", user.id)
+        .single();
 
-    if (!pu) return;
-    setPartnerUser(pu);
+      if (!pu) { setLoading(false); return; }
+      setPartnerUser(pu);
 
     // Get job details
     const { data: jobData, error } = await supabase
@@ -121,10 +137,9 @@ export default function JobDetailPage() {
       .select(`
         *,
         project:projects (
-          id, name, slug, size_kwp, modules_count, module_type, 
-          inverter_type, battery_type, roof_type,
+          id, name, slug,
           customer:customers (
-            id, name, email, phone, address, city, postal_code
+            id, first_name, last_name, email, phone, mobile, street, house_number, city, postal_code
           )
         )
       `)
@@ -173,11 +188,39 @@ export default function JobDetailPage() {
       setTeamMembers(team || []);
     }
 
-    setLoading(false);
+    // Load appointments for ALL jobs in this project (own + other subs)
+      const allJobIds = [jobId, ...(otherJobs?.map(j => j.id) || [])];
+      const { data: appts } = await supabase
+        .from("partner_job_appointments")
+        .select(`
+          *,
+          job:partner_jobs!job_id (
+            id, title, trade,
+            partner:partners!accepted_by_partner_id (company_name)
+          )
+        `)
+        .in("job_id", allJobIds)
+        .order("date", { ascending: true });
+      
+      setAppointments(appts || []);
+    } catch (err) {
+      console.error("Error loading job:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function acceptJob() {
     if (!job || !partnerUser) return;
+    
+    // Verbindliche Bestätigung
+    const confirmed = confirm(
+      "Auftrag verbindlich annehmen?\n\n" +
+      "Mit der Annahme verpflichten Sie sich zur Durchführung des Auftrags. " +
+      "Sie erhalten dann Zugriff auf die vollständigen Kundendaten."
+    );
+    if (!confirmed) return;
+    
     setActionLoading(true);
 
     const { error } = await supabase
@@ -193,7 +236,7 @@ export default function JobDetailPage() {
     if (error) {
       toast.error("Fehler beim Annehmen");
     } else {
-      toast.success("Auftrag angenommen!");
+      toast.success("Auftrag angenommen! Sie sehen jetzt die Kundendaten.");
       loadData();
     }
     setActionLoading(false);
@@ -263,6 +306,97 @@ export default function JobDetailPage() {
     setActionLoading(false);
   }
 
+  async function saveAppointment() {
+    if (!job || !partnerUser) return;
+    if (!appointmentForm.title || !appointmentForm.date) {
+      toast.error("Titel und Datum sind erforderlich");
+      return;
+    }
+    setActionLoading(true);
+
+    if (editingAppointment === 'new') {
+      // Neuer Termin
+      const { error } = await supabase
+        .from("partner_job_appointments")
+        .insert({
+          job_id: job.id,
+          partner_id: partnerUser.partner_id,
+          title: appointmentForm.title,
+          date: appointmentForm.date,
+          time_start: appointmentForm.time_start || null,
+          time_end: appointmentForm.time_end || null,
+          notes: appointmentForm.notes || null,
+          created_by: partnerUser.id,
+        });
+
+      if (error) {
+        toast.error("Fehler beim Erstellen");
+      } else {
+        toast.success("Termin erstellt");
+      }
+    } else {
+      // Bestehenden Termin aktualisieren
+      const { error } = await supabase
+        .from("partner_job_appointments")
+        .update({
+          title: appointmentForm.title,
+          date: appointmentForm.date,
+          time_start: appointmentForm.time_start || null,
+          time_end: appointmentForm.time_end || null,
+          notes: appointmentForm.notes || null,
+        })
+        .eq("id", editingAppointment);
+
+      if (error) {
+        toast.error("Fehler beim Speichern");
+      } else {
+        toast.success("Termin aktualisiert");
+      }
+    }
+    
+    setEditingAppointment(null);
+    loadData();
+    setActionLoading(false);
+  }
+
+  async function deleteAppointment(id: string) {
+    if (!confirm("Termin wirklich löschen?")) return;
+    
+    const { error } = await supabase
+      .from("partner_job_appointments")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Fehler beim Löschen");
+    } else {
+      toast.success("Termin gelöscht");
+      loadData();
+    }
+  }
+
+  function startNewAppointment() {
+    setAppointmentForm({
+      title: '',
+      date: '',
+      time_start: '',
+      time_end: '',
+      notes: ''
+    });
+    setEditingAppointment('new');
+  }
+
+  function startEditAppointment(appt: any) {
+    setAppointmentForm({
+      title: appt.title,
+      date: appt.date,
+      time_start: appt.time_start?.slice(0, 5) || '',
+      time_end: appt.time_end?.slice(0, 5) || '',
+      notes: appt.notes || ''
+    });
+    setEditingAppointment(appt.id);
+  }
+
   function openMaps() {
     if (!job?.project?.customer) return;
     const { address, postal_code, city } = job.project.customer;
@@ -285,7 +419,7 @@ export default function JobDetailPage() {
   const isAdmin = partnerUser?.role === "admin";
   const canAccept = isOpen && isAdmin;
   const canStart = job.status === "accepted" && isOwner;
-  const canWriteReport = job.status === "in_progress" && isOwner;
+  const canAccessDiary = ['accepted', 'in_progress', 'completed'].includes(job.status) && isOwner;
 
   return (
     <div className="space-y-6">
@@ -306,7 +440,7 @@ export default function JobDetailPage() {
             <JobStatusBadge status={job.status} />
           </div>
           <p className="text-neutral-400 mt-1">
-            {job.project?.name} · {job.trade && <span className="text-neutral-500">{job.trade}</span>}
+            {job.project?.name} · {job.trade && <span className="text-neutral-500">{getTradeLabel(job.trade)}</span>}
           </p>
         </div>
 
@@ -342,13 +476,13 @@ export default function JobDetailPage() {
               Starten
             </button>
           )}
-          {canWriteReport && (
+          {canAccessDiary && (
             <Link
               href={`/partner/auftraege/${job.id}/rapport`}
-              className="btn-primary flex items-center gap-2"
+              className="btn-secondary flex items-center gap-2"
             >
               <ClipboardCheck className="w-4 h-4" />
-              Rapport schreiben
+              Tagebuch
             </Link>
           )}
         </div>
@@ -365,79 +499,221 @@ export default function JobDetailPage() {
             </div>
           )}
 
-          {/* Schedule */}
+          {/* Deadline & Info */}
           <div className="card p-5">
             <h2 className="font-semibold text-white mb-3 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-blue-400" />
-              Termin
+              <Calendar className="w-5 h-5 text-[#fa432a]" />
+              Zu erledigen bis
             </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-xs text-neutral-500 uppercase">Datum</p>
-                <p className="text-white font-medium">
-                  {job.scheduled_date ? formatDate(job.scheduled_date) : "Noch nicht geplant"}
-                </p>
+            <div className="flex items-center gap-4">
+              <div className="text-2xl font-bold text-white">
+                {job.scheduled_date 
+                  ? new Date(job.scheduled_date).toLocaleDateString('de-DE', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric'
+                    })
+                  : "Kein Datum festgelegt"
+                }
               </div>
-              <div>
-                <p className="text-xs text-neutral-500 uppercase">Uhrzeit</p>
-                <p className="text-white font-medium">
-                  {job.scheduled_time_start 
-                    ? `${job.scheduled_time_start.slice(0, 5)}${job.scheduled_time_end ? ` - ${job.scheduled_time_end.slice(0, 5)}` : ''}`
-                    : "–"
-                  }
-                </p>
-              </div>
-              {job.estimated_hours && (
-                <div>
-                  <p className="text-xs text-neutral-500 uppercase">Geschätzte Dauer</p>
-                  <p className="text-white font-medium">{job.estimated_hours} Stunden</p>
-                </div>
-              )}
             </div>
+            {job.estimated_hours && (
+              <p className="text-neutral-400 text-sm mt-2">
+                Geschätzter Aufwand: ca. {job.estimated_hours} Stunden
+              </p>
+            )}
           </div>
 
-          {/* Project Details */}
-          {job.project && (
+          {/* Termine (alle Gewerke im Projekt) - direkt unter Deadline */}
+          {job.status !== 'open' && (
             <div className="card p-5">
-              <h2 className="font-semibold text-white mb-3">Anlage</h2>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                {job.project.size_kwp && (
-                  <div>
-                    <p className="text-neutral-500">Größe</p>
-                    <p className="text-white font-medium">{job.project.size_kwp} kWp</p>
-                  </div>
-                )}
-                {job.project.modules_count && (
-                  <div>
-                    <p className="text-neutral-500">Module</p>
-                    <p className="text-white font-medium">{job.project.modules_count} Stück</p>
-                  </div>
-                )}
-                {job.project.module_type && (
-                  <div>
-                    <p className="text-neutral-500">Modultyp</p>
-                    <p className="text-white font-medium">{job.project.module_type}</p>
-                  </div>
-                )}
-                {job.project.inverter_type && (
-                  <div>
-                    <p className="text-neutral-500">Wechselrichter</p>
-                    <p className="text-white font-medium">{job.project.inverter_type}</p>
-                  </div>
-                )}
-                {job.project.battery_type && (
-                  <div>
-                    <p className="text-neutral-500">Speicher</p>
-                    <p className="text-white font-medium">{job.project.battery_type}</p>
-                  </div>
-                )}
-                {job.project.roof_type && (
-                  <div>
-                    <p className="text-neutral-500">Dachtyp</p>
-                    <p className="text-white font-medium">{job.project.roof_type}</p>
-                  </div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold text-white flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-[#fa432a]" />
+                  Termine
+                </h2>
+                {isOwner && job.status !== 'completed' && !editingAppointment && (
+                  <button
+                    onClick={startNewAppointment}
+                    className="btn-secondary text-sm px-3 py-1.5"
+                  >
+                    + Termin hinzufügen
+                  </button>
                 )}
               </div>
+              
+              {editingAppointment ? (
+                <div className="bg-[#111] rounded-lg p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <label className="text-xs text-neutral-500 block mb-1">Art des Termins *</label>
+                      <select
+                        value={appointmentForm.title}
+                        onChange={(e) => setAppointmentForm({ ...appointmentForm, title: e.target.value })}
+                        className="input w-full"
+                      >
+                        <option value="">Bitte wählen...</option>
+                        <option value="Aufbau/Montage">Aufbau/Montage</option>
+                        <option value="Nacharbeiten">Nacharbeiten</option>
+                        <option value="Wartung">Wartung</option>
+                        <option value="Reparatur">Reparatur</option>
+                        <option value="Besichtigung">Besichtigung</option>
+                        <option value="Abnahme">Abnahme</option>
+                        <option value="Sonstiges">Sonstiges</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-neutral-500 block mb-1">Datum *</label>
+                      <input
+                        type="date"
+                        value={appointmentForm.date}
+                        onChange={(e) => setAppointmentForm({ ...appointmentForm, date: e.target.value })}
+                        className="input w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-neutral-500 block mb-1">Von</label>
+                      <input
+                        type="time"
+                        value={appointmentForm.time_start}
+                        onChange={(e) => setAppointmentForm({ ...appointmentForm, time_start: e.target.value })}
+                        className="input w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-neutral-500 block mb-1">Bis</label>
+                      <input
+                        type="time"
+                        value={appointmentForm.time_end}
+                        onChange={(e) => setAppointmentForm({ ...appointmentForm, time_end: e.target.value })}
+                        className="input w-full"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <label className="text-xs text-neutral-500 block mb-1">Notizen</label>
+                    <input
+                      type="text"
+                      value={appointmentForm.notes}
+                      onChange={(e) => setAppointmentForm({ ...appointmentForm, notes: e.target.value })}
+                      placeholder="z.B. Absprache mit Kunde, Material bereitstellen..."
+                      className="input w-full"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 mt-4">
+                    <button
+                      onClick={() => setEditingAppointment(null)}
+                      className="btn-secondary"
+                    >
+                      Abbrechen
+                    </button>
+                    <button
+                      onClick={saveAppointment}
+                      disabled={actionLoading}
+                      className="btn-primary"
+                    >
+                      Speichern
+                    </button>
+                  </div>
+                </div>
+              ) : appointments.length > 0 ? (
+                <div className="overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-neutral-800">
+                        <th className="text-left text-xs text-neutral-500 uppercase pb-3 font-medium">Gewerk</th>
+                        <th className="text-left text-xs text-neutral-500 uppercase pb-3 font-medium">Art</th>
+                        <th className="text-left text-xs text-neutral-500 uppercase pb-3 font-medium">Datum</th>
+                        <th className="text-left text-xs text-neutral-500 uppercase pb-3 font-medium hidden sm:table-cell">Uhrzeit</th>
+                        <th className="text-left text-xs text-neutral-500 uppercase pb-3 font-medium hidden md:table-cell">Notizen</th>
+                        {isOwner && job.status !== 'completed' && (
+                          <th className="text-right text-xs text-neutral-500 uppercase pb-3 font-medium w-20">Aktionen</th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {appointments.map((appt) => {
+                        const isOwnAppointment = appt.job_id === job.id;
+                        return (
+                          <tr key={appt.id} className={`border-b border-neutral-800/50 hover:bg-[#111] group ${!isOwnAppointment ? 'opacity-75' : ''}`}>
+                            <td className="py-3">
+                              <div>
+                                <span className={`text-xs px-2 py-0.5 rounded ${isOwnAppointment ? 'bg-[#fa432a]/20 text-[#fa432a]' : 'bg-neutral-800 text-neutral-400'}`}>
+                                  {getTradeLabel(appt.job?.trade)}
+                                </span>
+                                {appt.job?.partner?.company_name && (
+                                  <p className="text-xs text-neutral-500 mt-1">{appt.job.partner.company_name}</p>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3">
+                              <span className="text-white font-medium">{appt.title}</span>
+                            </td>
+                            <td className="py-3">
+                              <span className="text-neutral-300">
+                                {new Date(appt.date).toLocaleDateString('de-DE', {
+                                  weekday: 'short',
+                                  day: 'numeric',
+                                  month: 'short'
+                                })}
+                              </span>
+                            </td>
+                            <td className="py-3 hidden sm:table-cell">
+                              <span className="text-neutral-300">
+                                {appt.time_start ? appt.time_start.slice(0, 5) : '–'}
+                                {appt.time_end && ` – ${appt.time_end.slice(0, 5)}`}
+                              </span>
+                            </td>
+                            <td className="py-3 hidden md:table-cell">
+                              <span className="text-neutral-400 text-sm">{appt.notes || '–'}</span>
+                            </td>
+                            {isOwner && job.status !== 'completed' && (
+                              <td className="py-3 text-right">
+                                {isOwnAppointment ? (
+                                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                      onClick={() => startEditAppointment(appt)}
+                                      className="p-1.5 text-neutral-500 hover:text-white rounded hover:bg-neutral-800"
+                                      title="Bearbeiten"
+                                    >
+                                      ✎
+                                    </button>
+                                    <button
+                                      onClick={() => deleteAppointment(appt.id)}
+                                      className="p-1.5 text-neutral-500 hover:text-red-400 rounded hover:bg-neutral-800"
+                                      title="Löschen"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-neutral-600">–</span>
+                                )}
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <p className="text-neutral-400 mb-3">
+                    Noch keine Termine eingetragen
+                  </p>
+                  {job.status !== 'completed' && (job.project?.customer?.mobile || job.project?.customer?.phone) && (
+                    <a
+                      href={`tel:${job.project.customer.mobile || job.project.customer.phone}`}
+                      className="btn-secondary inline-flex items-center gap-2"
+                    >
+                      <Phone className="w-4 h-4" />
+                      Kunde anrufen & Termin vereinbaren
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -445,7 +721,7 @@ export default function JobDetailPage() {
           {documents.length > 0 && (
             <div className="card p-5">
               <h2 className="font-semibold text-white mb-3 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-blue-400" />
+                <FileText className="w-5 h-5 text-[#fa432a]" />
                 Dokumente
               </h2>
               <div className="space-y-2">
@@ -475,7 +751,7 @@ export default function JobDetailPage() {
           {teamJobs.length > 0 && (
             <div className="card p-5">
               <h2 className="font-semibold text-white mb-3 flex items-center gap-2">
-                <Users className="w-5 h-5 text-blue-400" />
+                <Users className="w-5 h-5 text-[#fa432a]" />
                 Andere Gewerke im Projekt
               </h2>
               <div className="space-y-3">
@@ -501,44 +777,60 @@ export default function JobDetailPage() {
               </div>
             </div>
           )}
+
         </div>
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Customer Info */}
-          {job.project?.customer && isOwner && (
+          {/* Customer Info - nur nach Annahme sichtbar */}
+          {job.project?.customer && job.status === 'open' && (
+            <div className="card p-5">
+              <h2 className="font-semibold text-white mb-3">Standort</h2>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center gap-2 text-neutral-400">
+                  <MapPin className="w-4 h-4" />
+                  <span>{job.project.customer.postal_code} {job.project.customer.city}</span>
+                </div>
+                <p className="text-xs text-neutral-500 mt-3">
+                  Vollständige Kundendaten werden nach Annahme des Auftrags sichtbar.
+                </p>
+              </div>
+            </div>
+          )}
+          
+          {job.project?.customer && isOwner && job.status !== 'open' && (
             <div className="card p-5">
               <h2 className="font-semibold text-white mb-3">Kunde</h2>
               <div className="space-y-3">
-                <p className="text-white font-medium">{job.project.customer.name}</p>
+                <p className="text-white font-medium">{job.project.customer.first_name} {job.project.customer.last_name}</p>
                 
                 <div className="space-y-2 text-sm">
                   <button
                     onClick={openMaps}
-                    className="flex items-start gap-2 text-neutral-400 hover:text-blue-400 transition-colors w-full text-left"
+                    className="flex items-start gap-2 text-neutral-400 hover:text-[#fa432a] transition-colors w-full text-left"
                   >
                     <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0" />
                     <span>
-                      {job.project.customer.address}<br />
+                      {job.project.customer.street} {job.project.customer.house_number}<br />
                       {job.project.customer.postal_code} {job.project.customer.city}
                     </span>
                     <ExternalLink className="w-3 h-3 ml-auto mt-0.5" />
                   </button>
                   
-                  {job.project.customer.phone && (
+                  {(job.project.customer.phone || job.project.customer.mobile) && (
                     <a
-                      href={`tel:${job.project.customer.phone}`}
-                      className="flex items-center gap-2 text-neutral-400 hover:text-blue-400 transition-colors"
+                      href={`tel:${job.project.customer.mobile || job.project.customer.phone}`}
+                      className="flex items-center gap-2 text-neutral-400 hover:text-[#fa432a] transition-colors"
                     >
                       <Phone className="w-4 h-4" />
-                      {job.project.customer.phone}
+                      {job.project.customer.mobile || job.project.customer.phone}
                     </a>
                   )}
                   
                   {job.project.customer.email && (
                     <a
                       href={`mailto:${job.project.customer.email}`}
-                      className="flex items-center gap-2 text-neutral-400 hover:text-blue-400 transition-colors"
+                      className="flex items-center gap-2 text-neutral-400 hover:text-[#fa432a] transition-colors"
                     >
                       <Mail className="w-4 h-4" />
                       {job.project.customer.email}
@@ -577,7 +869,7 @@ export default function JobDetailPage() {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <MessageSquare className="w-5 h-5 text-blue-400" />
+                  <MessageSquare className="w-5 h-5 text-[#fa432a]" />
                   <span className="font-medium text-white">Projekt-Chat</span>
                 </div>
                 <ChevronRight className="w-5 h-5 text-neutral-500" />
@@ -593,7 +885,7 @@ export default function JobDetailPage() {
 function JobStatusBadge({ status }: { status: string }) {
   const statusMap: Record<string, { label: string; class: string }> = {
     open: { label: "Verfügbar", class: "bg-yellow-500/20 text-yellow-400" },
-    accepted: { label: "Angenommen", class: "bg-blue-500/20 text-blue-400" },
+    accepted: { label: "Angenommen", class: "bg-[#fa432a]/20 text-[#fa432a]" },
     in_progress: { label: "In Arbeit", class: "bg-orange-500/20 text-orange-400" },
     completed: { label: "Erledigt", class: "bg-green-500/20 text-green-400" },
     declined: { label: "Abgelehnt", class: "bg-red-500/20 text-red-400" },

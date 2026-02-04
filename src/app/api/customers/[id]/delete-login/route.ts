@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createClient as createServerClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
 function createAdminClient() {
@@ -19,6 +20,24 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Auth check - only admin/mitarbeiter can delete customer logins
+    const authSupabase = await createServerClient();
+    const { data: { user } } = await authSupabase.auth.getUser();
+    
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { data: profile } = await authSupabase
+      .from("users")
+      .select("role")
+      .eq("auth_id", user.id)
+      .single();
+
+    if (!profile || !["admin", "mitarbeiter", "superadmin"].includes(profile.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const { id: customerId } = await params;
     const supabase = createAdminClient();
 
@@ -55,7 +74,6 @@ export async function POST(
     );
 
     if (authError) {
-      console.error("Auth delete error:", authError);
       return NextResponse.json(
         { error: authError.message },
         { status: 500 }
@@ -63,24 +81,20 @@ export async function POST(
     }
 
     // Clear auth_user_id from customer
-    const { error: updateError } = await supabase
+    await supabase
       .from("customers")
       .update({ auth_user_id: null })
       .eq("id", customerId);
-
-    if (updateError) {
-      console.error("Update error:", updateError);
-    }
 
     return NextResponse.json({
       success: true,
       message: `Login für ${customer.email} gelöscht`,
     });
 
-  } catch (error: any) {
-    console.error("Delete login error:", error);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Fehler beim Löschen des Logins";
     return NextResponse.json(
-      { error: error.message || "Fehler beim Löschen des Logins" },
+      { error: message },
       { status: 500 }
     );
   }

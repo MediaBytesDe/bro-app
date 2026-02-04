@@ -14,21 +14,22 @@ export default async function CustomerLayout({
     redirect("/login");
   }
 
-  // Check if user is a customer
+  // Check if user is a customer or admin (admin can preview)
   const { data: profile, error: profileError } = await supabase
     .from("users")
-    .select("role, display_name, email")
+    .select("role, display_name, email, auth_id")
     .eq("auth_id", user.id)
     .eq("active", true)
     .single();
 
-  // Not a customer - redirect to main app
-  if (profileError || profile?.role !== "customer") {
+  // Not a customer or admin - redirect to main app
+  const allowedRoles = ["customer", "admin", "superadmin"];
+  if (profileError || !allowedRoles.includes(profile?.role)) {
     redirect("/");
   }
 
   return (
-    <CustomerShell profile={profile}>
+    <CustomerShell profile={{ ...profile, auth_id: user.id, role: profile.role }}>
       {children}
     </CustomerShell>
   );
