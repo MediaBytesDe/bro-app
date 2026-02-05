@@ -7,7 +7,7 @@ import {
   Home, Users, Brain, FileText, LogOut, Building2,
   FileSignature, Calendar, Wrench, FolderOpen, Cpu,
   ClipboardList, MoreHorizontal, X, Package, ChevronDown,
-  UserCircle, ShoppingCart, Briefcase, Settings, MessageSquare, Download
+  UserCircle, ShoppingCart, Briefcase, Settings, MessageSquare, Download, Database
 } from "lucide-react";
 import type { User as AuthUser } from "@supabase/supabase-js";
 import type { LucideIcon } from "lucide-react";
@@ -20,6 +20,7 @@ const allTabs = [
   { id: "quotes", path: "/quotes", label: "Angebote", icon: FileSignature },
   { id: "articles", path: "/articles", label: "Artikel", icon: Package },
   { id: "shopify-import", path: "/shopify-import", label: "Shopify Import", icon: Download },
+  { id: "wawi-import", path: "/wawi-import", label: "WAWI Import", icon: Database },
   { id: "calendar", path: "/calendar", label: "Kalender", icon: Calendar },
   { id: "nachrichten", path: "/nachrichten", label: "Nachrichten", icon: MessageSquare },
   { id: "forms", path: "/forms", label: "Formulare", icon: ClipboardList },
@@ -59,6 +60,7 @@ const desktopNav: NavItem[] = [
       { id: "quotes", path: "/quotes", label: "Angebote", icon: FileSignature, description: "Angebote erstellen & verwalten" },
       { id: "articles", path: "/articles", label: "Artikel", icon: Package, description: "Produkte & Dienstleistungen" },
       { id: "shopify-import", path: "/shopify-import", label: "Shopify Import", icon: Download, description: "Solarhandel24 Import" },
+      { id: "wawi-import", path: "/wawi-import", label: "WAWI Import", icon: Database, description: "Altes WAWI System Import" },
     ]
   },
   {
