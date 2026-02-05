@@ -38,6 +38,7 @@ export default function OpenClawPage() {
     einkauf: [],
     kundenservice: [],
   });
+  const [loadedAgents, setLoadedAgents] = useState<Set<OpenClawAgent>>(new Set());
   const [loadingMessages, setLoadingMessages] = useState(false);
 
   const { ask, loading, error } = useOpenClaw();
@@ -46,28 +47,36 @@ export default function OpenClawPage() {
   useEffect(() => {
     const loadAgentMessages = async () => {
       // Skip if already loaded
-      if (messagesByAgent[activeAgent].length > 0) return;
+      if (loadedAgents.has(activeAgent)) return;
 
       setLoadingMessages(true);
-      const result = await loadMessages(activeAgent);
 
-      if (result.success && result.messages) {
-        setMessagesByAgent((prev) => ({
-          ...prev,
-          [activeAgent]: result.messages!.map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-            agent: msg.agent,
-            timestamp: msg.created_at,
-          })),
-        }));
+      try {
+        const result = await loadMessages(activeAgent);
+
+        if (result.success && result.messages) {
+          setMessagesByAgent((prev) => ({
+            ...prev,
+            [activeAgent]: result.messages!.map((msg) => ({
+              role: msg.role,
+              content: msg.content,
+              agent: msg.agent,
+              timestamp: msg.created_at,
+            })),
+          }));
+        }
+
+        // Mark as loaded
+        setLoadedAgents((prev) => new Set(prev).add(activeAgent));
+      } catch (err) {
+        console.error("Error loading messages:", err);
+      } finally {
+        setLoadingMessages(false);
       }
-
-      setLoadingMessages(false);
     };
 
     loadAgentMessages();
-  }, [activeAgent]);
+  }, [activeAgent, loadedAgents]);
 
   // WebSocket lifecycle: disconnect on unmount
   useEffect(() => {
