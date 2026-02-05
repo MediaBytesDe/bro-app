@@ -32,6 +32,12 @@ export type Product = {
   unit: string;
   standard_quantity: number;
   status: 'active' | 'discontinued' | 'out_of_stock';
+  // Shopify integration fields
+  source_url?: string | null;
+  source_type?: "manual" | "shopify" | "lexware";
+  source_product_id?: string | null;
+  image_url?: string | null;
+  last_sync_at?: string | null;
 };
 
 export type WawiQuote = {
