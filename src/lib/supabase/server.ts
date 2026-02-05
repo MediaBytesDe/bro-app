@@ -22,13 +22,14 @@ export async function createClient() {
           }
         },
       },
-      // Connection pooling settings
+      // Set default database schema
       db: {
         schema: 'public',
       },
       auth: {
         autoRefreshToken: true,
         persistSession: true,
+        detectSessionInUrl: true,
         flowType: 'pkce',
       },
     }
