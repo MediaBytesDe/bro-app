@@ -88,7 +88,7 @@ export function ArticlesList() {
         .sort((a, b) => a.sort_order - b.sort_order)
         .map(cat => {
           const children = buildTree(cat.id); // Recursively build children
-          const directProducts = filtered.filter(p => p.category === cat.name);
+          const directProducts = filtered.filter(p => p.category_id === cat.id);
           const totalProducts = children.reduce((acc, child) => acc + child.totalProducts, 0) + directProducts.length;
 
           return {

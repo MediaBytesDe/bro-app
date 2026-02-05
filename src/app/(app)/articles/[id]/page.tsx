@@ -39,6 +39,7 @@ export default function ArticleDetailPage() {
     name: "",
     sku: "",
     category: "",
+    category_id: null,
     manufacturer: "",
     description: "",
     unit: "Stück",
@@ -251,9 +252,13 @@ export default function ArticleDetailPage() {
             <CategorySelect
               label="Kategorie"
               categories={categories}
-              value={product.category || ""}
-              onChange={(name) => {
-                updateField("category", name);
+              value={product.category_id || null}
+              onChange={(categoryId, categoryName) => {
+                setProduct(prev => ({
+                  ...prev,
+                  category_id: categoryId,
+                  category: categoryName, // Keep for backward compatibility
+                }));
               }}
             />
           </div>
@@ -553,8 +558,8 @@ function CalcResult({ label, value }: { label: string; value: number }) {
 function CategorySelect({ label, categories, value, onChange }: {
   label: string;
   categories: Category[];
-  value: string;
-  onChange: (name: string) => void;
+  value: string | null;
+  onChange: (categoryId: string | null, categoryName: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -574,25 +579,27 @@ function CategorySelect({ label, categories, value, onChange }: {
 
   const tree = buildTree(null);
 
-  // Find current category and build breadcrumb path
-  const getCategoryPath = (catName: string): string => {
-    const findPath = (cats: Category[], targetName: string, path: string[] = []): string[] | null => {
+  // Find current category and build breadcrumb path by ID
+  const getCategoryPath = (catId: string | null): string => {
+    if (!catId) return "Kategorie wählen...";
+
+    const findPath = (cats: Category[], targetId: string, path: string[] = []): string[] | null => {
       for (const cat of cats) {
-        if (cat.name === targetName) {
+        if (cat.id === targetId) {
           return [...path, cat.name];
         }
         const children = categories.filter(c => c.parent_id === cat.id);
-        const result = findPath(children, targetName, [...path, cat.name]);
+        const result = findPath(children, targetId, [...path, cat.name]);
         if (result) return result;
       }
       return null;
     };
 
-    const path = findPath(categories, catName);
-    return path ? path.join(' → ') : catName;
+    const path = findPath(categories, catId);
+    return path ? path.join(' → ') : "Kategorie wählen...";
   };
 
-  const displayName = value ? getCategoryPath(value) : "Kategorie wählen...";
+  const displayName = getCategoryPath(value);
 
   // Recursive tree item component for unlimited nesting
   function CategoryTreeItem({ node, level }: {
@@ -620,7 +627,7 @@ function CategorySelect({ label, categories, value, onChange }: {
             type="button"
             onClick={() => handleSelect(node)}
             className={`flex-1 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
-              value === node.name
+              value === node.id
                 ? 'bg-[#fa432a]/20 text-[#fa432a] font-medium'
                 : level === 0
                   ? 'text-white font-medium hover:bg-neutral-800'
@@ -651,7 +658,7 @@ function CategorySelect({ label, categories, value, onChange }: {
   };
 
   const handleSelect = (cat: Category) => {
-    onChange(cat.name);
+    onChange(cat.id, cat.name);
     setOpen(false);
   };
 

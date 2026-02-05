@@ -7,6 +7,7 @@ export type Product = {
   name: string;
   description: string | null;
   category: string;
+  category_id: string | null;
   manufacturer: string | null;
   sku: string;
   purchase_list_price: number;
