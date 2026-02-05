@@ -69,18 +69,31 @@ export default function CategoriesPage() {
     }
   }
 
-  // Build tree
-  const tree = categories
-    .filter(c => !c.parent_id)
-    .filter(c => showInactive || c.is_active)
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map(main => ({
-      ...main,
-      children: categories
-        .filter(c => c.parent_id === main.id)
-        .filter(c => showInactive || c.is_active)
-        .sort((a, b) => a.sort_order - b.sort_order)
-    }));
+  // Build recursive tree for unlimited nesting
+  type CategoryNode = Category & { children: CategoryNode[] };
+
+  const buildTree = (parentId: string | null): CategoryNode[] => {
+    return categories
+      .filter(c => c.parent_id === parentId)
+      .filter(c => showInactive || c.is_active)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map(cat => ({
+        ...cat,
+        children: buildTree(cat.id)
+      }));
+  };
+
+  const tree = buildTree(null);
+
+  // Render category options recursively for select dropdown
+  const renderCategoryOptions = (nodes: CategoryNode[], level: number): JSX.Element[] => {
+    return nodes.flatMap(node => [
+      <option key={node.id} value={node.id}>
+        {'  '.repeat(level)}↳ {node.name}
+      </option>,
+      ...renderCategoryOptions(node.children, level + 1)
+    ]);
+  };
 
   const toggleExpand = (id: string) => {
     const next = new Set(expanded);
@@ -251,9 +264,7 @@ export default function CategoriesPage() {
             className="w-full px-3 py-2 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm focus:outline-none focus:border-[#fa432a]/50"
           >
             <option value="">-- Hauptkategorie --</option>
-            {categories.filter(c => !c.parent_id && c.is_active).map(c => (
-              <option key={c.id} value={c.id}>↳ {c.name}</option>
-            ))}
+            {renderCategoryOptions(tree, 0)}
           </select>
           <div className="flex gap-2">
             <button
@@ -281,116 +292,140 @@ export default function CategoriesPage() {
             <p className="text-neutral-500">Keine Kategorien</p>
           </div>
         ) : (
-          tree.map(main => (
-            <div key={main.id}>
-              {/* Main Category */}
-              <div className={`flex items-center gap-2 px-4 py-3 ${!main.is_active ? 'opacity-50' : ''}`}>
-                <button
-                  onClick={() => toggleExpand(main.id)}
-                  className="p-1 hover:bg-neutral-800 rounded"
-                >
-                  {expanded.has(main.id) 
-                    ? <ChevronDown className="w-4 h-4 text-neutral-500" />
-                    : <ChevronRight className="w-4 h-4 text-neutral-500" />
-                  }
-                </button>
-                
-                {editingId === main.id ? (
-                  <input
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveEdit(main.id);
-                      if (e.key === "Escape") cancelEdit();
-                    }}
-                    className="flex-1 px-2 py-1 rounded bg-neutral-800 border border-neutral-700 text-white text-sm focus:outline-none"
-                    autoFocus
-                  />
-                ) : (
-                  <span className="flex-1 font-medium text-white">{main.name}</span>
-                )}
-                
-                <span className="text-xs text-neutral-500">{main.children.length} Sub</span>
-                
-                <div className="flex items-center gap-1">
-                  {editingId === main.id ? (
-                    <>
-                      <button onClick={() => saveEdit(main.id)} className="p-1.5 hover:bg-neutral-800 rounded text-green-400">
-                        <Check className="w-4 h-4" />
-                      </button>
-                      <button onClick={cancelEdit} className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button onClick={() => startEdit(main)} className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400">
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => toggleActive(main)} className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400">
-                        {main.is_active ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                      <button onClick={() => deleteCategory(main)} className="p-1.5 hover:bg-neutral-800 rounded text-red-400">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Subcategories */}
-              {expanded.has(main.id) && main.children.map(sub => (
-                <div 
-                  key={sub.id} 
-                  className={`flex items-center gap-2 px-4 py-2.5 pl-12 bg-neutral-900/30 ${!sub.is_active ? 'opacity-50' : ''}`}
-                >
-                  {editingId === sub.id ? (
-                    <input
-                      type="text"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") saveEdit(sub.id);
-                        if (e.key === "Escape") cancelEdit();
-                      }}
-                      className="flex-1 px-2 py-1 rounded bg-neutral-800 border border-neutral-700 text-white text-sm focus:outline-none"
-                      autoFocus
-                    />
-                  ) : (
-                    <span className="flex-1 text-sm text-neutral-300">{sub.name}</span>
-                  )}
-                  
-                  <div className="flex items-center gap-1">
-                    {editingId === sub.id ? (
-                      <>
-                        <button onClick={() => saveEdit(sub.id)} className="p-1.5 hover:bg-neutral-800 rounded text-green-400">
-                          <Check className="w-4 h-4" />
-                        </button>
-                        <button onClick={cancelEdit} className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400">
-                          <X className="w-4 h-4" />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button onClick={() => startEdit(sub)} className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400">
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => toggleActive(sub)} className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400">
-                          {sub.is_active ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                        <button onClick={() => deleteCategory(sub)} className="p-1.5 hover:bg-neutral-800 rounded text-red-400">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+          tree.map(node => (
+            <CategoryNode
+              key={node.id}
+              node={node}
+              level={0}
+              expanded={expanded}
+              toggleExpand={toggleExpand}
+              editingId={editingId}
+              editName={editName}
+              setEditName={setEditName}
+              startEdit={startEdit}
+              saveEdit={saveEdit}
+              cancelEdit={cancelEdit}
+              toggleActive={toggleActive}
+              deleteCategory={deleteCategory}
+            />
           ))
         )}
       </div>
     </div>
+  );
+}
+
+// Recursive CategoryNode component for unlimited nesting
+function CategoryNode({ node, level, expanded, toggleExpand, editingId, editName, setEditName, startEdit, saveEdit, cancelEdit, toggleActive, deleteCategory }: {
+  node: Category & { children: any[] };
+  level: number;
+  expanded: Set<string>;
+  toggleExpand: (id: string) => void;
+  editingId: string | null;
+  editName: string;
+  setEditName: (name: string) => void;
+  startEdit: (cat: Category) => void;
+  saveEdit: (id: string) => void;
+  cancelEdit: () => void;
+  toggleActive: (cat: Category) => void;
+  deleteCategory: (cat: Category) => void;
+}) {
+  const hasChildren = node.children.length > 0;
+  const isExpanded = expanded.has(node.id);
+  const paddingLeft = level * 24 + 16; // 16px base + 24px per level
+
+  // Count total nested children
+  const countChildren = (cat: typeof node): number => {
+    return cat.children.reduce((sum, child) => sum + 1 + countChildren(child), 0);
+  };
+  const totalChildren = countChildren(node);
+
+  return (
+    <>
+      <div
+        className={`flex items-center gap-2 py-3 ${level > 0 ? 'bg-neutral-900/30' : ''} ${!node.is_active ? 'opacity-50' : ''}`}
+        style={{ paddingLeft: `${paddingLeft}px`, paddingRight: '16px' }}
+      >
+        {hasChildren ? (
+          <button
+            onClick={() => toggleExpand(node.id)}
+            className="p-1 hover:bg-neutral-800 rounded"
+          >
+            {isExpanded
+              ? <ChevronDown className="w-4 h-4 text-neutral-500" />
+              : <ChevronRight className="w-4 h-4 text-neutral-500" />
+            }
+          </button>
+        ) : (
+          <div className="w-6" />
+        )}
+
+        {editingId === node.id ? (
+          <input
+            type="text"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveEdit(node.id);
+              if (e.key === "Escape") cancelEdit();
+            }}
+            className="flex-1 px-2 py-1 rounded bg-neutral-800 border border-neutral-700 text-white text-sm focus:outline-none"
+            autoFocus
+          />
+        ) : (
+          <span className={`flex-1 ${level === 0 ? 'font-medium text-white' : 'text-sm text-neutral-300'}`}>
+            {node.name}
+          </span>
+        )}
+
+        {hasChildren && (
+          <span className="text-xs text-neutral-500">{totalChildren} Sub</span>
+        )}
+
+        <div className="flex items-center gap-1">
+          {editingId === node.id ? (
+            <>
+              <button onClick={() => saveEdit(node.id)} className="p-1.5 hover:bg-neutral-800 rounded text-green-400">
+                <Check className="w-4 h-4" />
+              </button>
+              <button onClick={cancelEdit} className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400">
+                <X className="w-4 h-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => startEdit(node)} className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400">
+                <Pencil className="w-4 h-4" />
+              </button>
+              <button onClick={() => toggleActive(node)} className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400">
+                {node.is_active ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+              <button onClick={() => deleteCategory(node)} className="p-1.5 hover:bg-neutral-800 rounded text-red-400">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Render children recursively */}
+      {isExpanded && hasChildren && node.children.map(child => (
+        <CategoryNode
+          key={child.id}
+          node={child}
+          level={level + 1}
+          expanded={expanded}
+          toggleExpand={toggleExpand}
+          editingId={editingId}
+          editName={editName}
+          setEditName={setEditName}
+          startEdit={startEdit}
+          saveEdit={saveEdit}
+          cancelEdit={cancelEdit}
+          toggleActive={toggleActive}
+          deleteCategory={deleteCategory}
+        />
+      ))}
+    </>
   );
 }
