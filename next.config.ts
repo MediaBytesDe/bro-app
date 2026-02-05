@@ -22,6 +22,12 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: "100mb",
     },
+    // Enable optimizePackageImports for better tree-shaking
+    optimizePackageImports: [
+      '@react-pdf/renderer',
+      '@google/model-viewer',
+      'lucide-react',
+    ],
   },
   // Security Headers
   async headers() {

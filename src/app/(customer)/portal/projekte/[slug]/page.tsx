@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { getTradeLabel, loadTradesFromDB } from "@/lib/trades";
-import { ModelViewer3D } from "@/components/model-viewer-3d";
+import LazyModelViewer from "@/components/lazy-model-viewer";
 
 export default function CustomerProjectDetailPage() {
   const params = useParams();
@@ -279,8 +279,8 @@ export default function CustomerProjectDetailPage() {
                 </svg>
                 3D-Modell Ihres Projekts
               </h3>
-              <ModelViewer3D 
-                src={models3d[0].storage_url} 
+              <LazyModelViewer
+                src={models3d[0].storage_url}
                 alt={`3D-Modell: ${project.name}`}
                 className="h-[400px] md:h-[500px]"
               />
