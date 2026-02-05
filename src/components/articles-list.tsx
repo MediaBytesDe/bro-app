@@ -73,39 +73,35 @@ export function ArticlesList() {
     );
   }, [products, search]);
 
-  // Group by category with hierarchy support
-  const grouped = useMemo(() => {
-    // Build category lookup
-    const categoryLookup = new Map<string, Category>();
-    categories.forEach(cat => categoryLookup.set(cat.name, cat));
+  // Build recursive category tree with unlimited nesting
+  const categoryTree = useMemo(() => {
+    type CategoryNode = Category & {
+      children: CategoryNode[];
+      products: Product[];
+      totalProducts: number;
+    };
 
-    // Get main categories (no parent)
-    const mainCats = categories
-      .filter(c => !c.parent_id)
-      .sort((a, b) => a.sort_order - b.sort_order);
-
-    // Build hierarchy with products
-    return mainCats.map(main => {
-      // Find subcategories
-      const subs = categories
-        .filter(c => c.parent_id === main.id)
+    // Recursive function to build tree and count products at all levels
+    const buildTree = (parentId: string | null): CategoryNode[] => {
+      return categories
+        .filter(c => c.parent_id === parentId)
         .sort((a, b) => a.sort_order - b.sort_order)
-        .map(sub => ({
-          ...sub,
-          products: filtered.filter(p => p.category === sub.name)
-        }));
+        .map(cat => {
+          const children = buildTree(cat.id); // Recursively build children
+          const directProducts = filtered.filter(p => p.category === cat.name);
+          const totalProducts = children.reduce((acc, child) => acc + child.totalProducts, 0) + directProducts.length;
 
-      // Products directly in main category
-      const directProducts = filtered.filter(p => p.category === main.name);
+          return {
+            ...cat,
+            children,
+            products: directProducts,
+            totalProducts
+          };
+        });
+    };
 
-      return {
-        id: main.id,
-        name: main.name,
-        subcategories: subs,
-        directProducts,
-        totalProducts: subs.reduce((acc, s) => acc + s.products.length, 0) + directProducts.length
-      };
-    }).filter(m => m.totalProducts > 0 || !search);
+    // Build tree from root level (categories with no parent)
+    return buildTree(null).filter(node => node.totalProducts > 0 || !search);
   }, [filtered, categories, search]);
 
   const toggleCategory = (id: string) => {
@@ -172,52 +168,17 @@ export function ArticlesList() {
         <p className="text-xs text-neutral-500">{filtered.length} Treffer</p>
       )}
 
-      {/* Grouped List */}
+      {/* Recursive Category Tree */}
       <div className="space-y-2">
-        {grouped.map(main => (
-          <div key={main.id} className="border border-neutral-800 rounded-xl overflow-hidden">
-            {/* Main Category Header */}
-            <button
-              onClick={() => toggleCategory(main.id)}
-              className="w-full flex items-center justify-between px-4 py-3 bg-neutral-900/50 hover:bg-neutral-900 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <ChevronDown className={`w-4 h-4 text-neutral-500 transition-transform ${expandedCategories.has(main.id) ? '' : '-rotate-90'}`} />
-                <span className="font-medium text-white">{main.name}</span>
-                <span className="text-xs text-neutral-500">({main.totalProducts})</span>
-              </div>
-            </button>
-
-            {/* Expanded Content */}
-            {expandedCategories.has(main.id) && (
-              <div className="divide-y divide-neutral-800/50">
-                {/* Subcategories */}
-                {main.subcategories.map(sub => (
-                  <div key={sub.id}>
-                    {/* Subcategory Header */}
-                    {sub.products.length > 0 && (
-                      <>
-                        <div className="px-4 py-2 bg-neutral-900/30">
-                          <span className="text-xs font-medium text-neutral-400 uppercase tracking-wider">
-                            {sub.name}
-                          </span>
-                        </div>
-                        {/* Products */}
-                        {sub.products.map(product => (
-                          <ProductRow key={product.id} product={product} onClick={() => router.push(`/articles/${product.id}`)} />
-                        ))}
-                      </>
-                    )}
-                  </div>
-                ))}
-                
-                {/* Direct products (no subcategory) */}
-                {main.directProducts.map(product => (
-                  <ProductRow key={product.id} product={product} onClick={() => router.push(`/articles/${product.id}`)} />
-                ))}
-              </div>
-            )}
-          </div>
+        {categoryTree.map(node => (
+          <CategoryNode
+            key={node.id}
+            node={node}
+            level={0}
+            expandedCategories={expandedCategories}
+            toggleCategory={toggleCategory}
+            onProductClick={(id) => router.push(`/articles/${id}`)}
+          />
         ))}
       </div>
 
@@ -228,6 +189,108 @@ export function ArticlesList() {
           <p className="text-neutral-500">Keine Artikel vorhanden</p>
         </div>
       )}
+    </div>
+  );
+}
+
+// Recursive Category Node Component for unlimited nesting
+function CategoryNode({ node, level, expandedCategories, toggleCategory, onProductClick }: {
+  node: Category & { children: any[]; products: Product[]; totalProducts: number };
+  level: number;
+  expandedCategories: Set<string>;
+  toggleCategory: (id: string) => void;
+  onProductClick: (id: string) => void;
+}) {
+  const isExpanded = expandedCategories.has(node.id);
+  const hasChildren = node.children.length > 0;
+  const hasProducts = node.products.length > 0;
+
+  // Root level (level 0) gets card styling
+  if (level === 0) {
+    return (
+      <div className="border border-neutral-800 rounded-xl overflow-hidden">
+        <button
+          onClick={() => toggleCategory(node.id)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-neutral-900/50 hover:bg-neutral-900 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <ChevronDown className={`w-4 h-4 text-neutral-500 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+            <span className="font-medium text-white">{node.name}</span>
+            <span className="text-xs text-neutral-500">({node.totalProducts})</span>
+          </div>
+        </button>
+
+        {isExpanded && (
+          <div className="divide-y divide-neutral-800/50">
+            {/* Render children recursively */}
+            {hasChildren && node.children.map(child => (
+              <CategoryNode
+                key={child.id}
+                node={child}
+                level={level + 1}
+                expandedCategories={expandedCategories}
+                toggleCategory={toggleCategory}
+                onProductClick={onProductClick}
+              />
+            ))}
+
+            {/* Direct products */}
+            {hasProducts && node.products.map(product => (
+              <ProductRow
+                key={product.id}
+                product={product}
+                onClick={() => onProductClick(product.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Nested levels (level > 0) get subcategory styling with indentation
+  const indent = level * 16; // 16px per level
+
+  return (
+    <div>
+      {/* Subcategory Header */}
+      {(hasChildren || hasProducts) && (
+        <div style={{ paddingLeft: `${indent}px` }} className="px-4 py-2 bg-neutral-900/30">
+          <button
+            onClick={() => hasChildren ? toggleCategory(node.id) : null}
+            className="flex items-center gap-2 text-left w-full"
+          >
+            {hasChildren && (
+              <ChevronDown className={`w-3 h-3 text-neutral-500 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+            )}
+            <span className="text-xs font-medium text-neutral-400 uppercase tracking-wider">
+              {node.name}
+            </span>
+            <span className="text-xs text-neutral-600">({node.totalProducts})</span>
+          </button>
+        </div>
+      )}
+
+      {/* Children (if expanded) */}
+      {isExpanded && hasChildren && node.children.map(child => (
+        <CategoryNode
+          key={child.id}
+          node={child}
+          level={level + 1}
+          expandedCategories={expandedCategories}
+          toggleCategory={toggleCategory}
+          onProductClick={onProductClick}
+        />
+      ))}
+
+      {/* Products at this level */}
+      {hasProducts && node.products.map(product => (
+        <ProductRow
+          key={product.id}
+          product={product}
+          onClick={() => onProductClick(product.id)}
+        />
+      ))}
     </div>
   );
 }
