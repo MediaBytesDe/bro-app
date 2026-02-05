@@ -1,6 +1,7 @@
 "use client";
 
 import { AuthProvider } from "@/contexts/auth-context";
+import { QueryProvider } from "@/providers/query-provider";
 import type { ReactNode } from "react";
 
 interface ProvidersProps {
@@ -8,5 +9,9 @@ interface ProvidersProps {
 }
 
 export function Providers({ children }: ProvidersProps) {
-  return <AuthProvider>{children}</AuthProvider>;
+  return (
+    <QueryProvider>
+      <AuthProvider>{children}</AuthProvider>
+    </QueryProvider>
+  );
 }
