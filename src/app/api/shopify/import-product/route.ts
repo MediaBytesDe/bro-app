@@ -115,6 +115,13 @@ async function mapShopifyProduct(shopifyProduct: ShopifyProduct, sourceUrl: stri
   // Get first variant (usually the base variant)
   const firstVariant = shopifyProduct.variants?.[0];
   const sku = firstVariant?.sku || shopifyProduct.id.toString();
+
+  // Log both prices for debugging
+  console.log(`Shopify prices for ${shopifyProduct.title}:`, {
+    price: firstVariant?.price,
+    compare_at_price: firstVariant?.compare_at_price,
+  });
+
   const purchasePrice = parseFloat(firstVariant?.price || "0");
 
   // Get main image
