@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { Spinner } from "@/components/ui/spinner";
-import { 
-  Calendar, Clock, CheckCircle, Users, ChevronRight, 
+import { AppointmentsSection } from "@/components/dashboard/appointments-section";
+import { TasksSection } from "@/components/dashboard/tasks-section";
+import {
+  Calendar, Clock, CheckCircle, Users, ChevronRight,
   Zap, FileSignature, MapPin, Phone, AlertCircle,
   ArrowRight, Circle, Building2, Plus, TrendingUp
 } from "lucide-react";
@@ -23,10 +25,6 @@ interface QuoteItem {
 }
 
 interface DashboardData {
-  todayAppointments: (AppointmentRow & { customer?: { first_name: string; last_name: string; company_name?: string } })[];
-  upcomingAppointments: (AppointmentRow & { customer?: { first_name: string; last_name: string; company_name?: string } })[];
-  myTasks: TaskRow[];
-  openTasks: TaskRow[];
   newLeads: LeadRow[];
   projects: ProjectStats[];
   openQuotes: QuoteItem[];
@@ -51,20 +49,14 @@ export function Dashboard() {
 
   async function loadData() {
     if (!profile?.id) return;
-    
+
     setLoading(true);
     try {
       const now = new Date();
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
       const endOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7).toISOString();
 
       const [
-        todayAppointmentsRes,
-        upcomingAppointmentsRes,
-        myTasksRes,
-        openTasksRes,
-        myProjectTasksRes,
         leadsRes,
         projectsRes,
         openQuotesRes,
@@ -73,52 +65,6 @@ export function Dashboard() {
         customersCountRes,
         weekAppointmentsRes,
       ] = await Promise.all([
-        // Heutige Termine
-        supabase
-          .from("appointments")
-          .select("*, customer:customers(first_name, last_name, company_name)")
-          .gte("start_time", startOfDay)
-          .lte("start_time", endOfDay)
-          .not("status", "eq", "cancelled")
-          .order("start_time"),
-        
-        // Kommende Termine (nächste 7 Tage, ohne heute)
-        supabase
-          .from("appointments")
-          .select("*, customer:customers(first_name, last_name, company_name)")
-          .gt("start_time", endOfDay)
-          .lte("start_time", endOfWeek)
-          .not("status", "eq", "cancelled")
-          .order("start_time")
-          .limit(5),
-        
-        // Meine offenen Aufgaben
-        supabase
-          .from("tasks")
-          .select("*")
-          .eq("assigned_to", profile.id)
-          .in("status", ["open", "in_progress"])
-          .order("due_date", { ascending: true, nullsFirst: false })
-          .limit(8),
-        
-        // Allgemeine offene Aufgaben
-        supabase
-          .from("tasks")
-          .select("*")
-          .is("assigned_to", null)
-          .in("status", ["open", "in_progress"])
-          .order("created_at", { ascending: false })
-          .limit(5),
-        
-        // Meine Projekt-Aufgaben
-        supabase
-          .from("project_tasks")
-          .select("*, project:projects(id, name, slug)")
-          .eq("assigned_user_id", profile.id)
-          .in("status", ["open", "in_progress"])
-          .order("due_date", { ascending: true, nullsFirst: false })
-          .limit(8),
-        
         // Neue Leads
         supabase
           .from("leads")
@@ -126,7 +72,7 @@ export function Dashboard() {
           .in("status", ["new", "contacted", "qualified"])
           .order("created_at", { ascending: false })
           .limit(8),
-        
+
         // Projekte/Marken
         supabase
           .from("projects")
@@ -134,7 +80,7 @@ export function Dashboard() {
           .is("parent_id", null)
           .order("sort_order")
           .limit(6),
-        
+
         // Offene Angebote (nicht abgeschlossen)
         supabase
           .from("wawi_quotes")
@@ -142,7 +88,7 @@ export function Dashboard() {
           .not("status", "in", '("accepted","rejected","expired")')
           .order("created_at", { ascending: false })
           .limit(10),
-        
+
         // Stats
         supabase.from("leads").select("*", { count: "exact", head: true }).not("status", "in", '("won","lost")'),
         supabase.from("wawi_quotes").select("*", { count: "exact", head: true }).not("status", "in", '("accepted","rejected","expired")'),
@@ -150,21 +96,7 @@ export function Dashboard() {
         supabase.from("appointments").select("*", { count: "exact", head: true }).gte("start_time", startOfDay).lte("start_time", endOfWeek),
       ]);
 
-      // Combine old tasks and project tasks
-      const combinedTasks = [
-        ...(myTasksRes.data || []).map(t => ({ ...t, _source: "tasks" })),
-        ...(myProjectTasksRes.data || []).map(t => ({ ...t, _source: "project_tasks" })),
-      ].sort((a, b) => {
-        if (!a.due_date) return 1;
-        if (!b.due_date) return -1;
-        return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
-      }).slice(0, 8);
-
       setData({
-        todayAppointments: todayAppointmentsRes.data || [],
-        upcomingAppointments: upcomingAppointmentsRes.data || [],
-        myTasks: combinedTasks,
-        openTasks: openTasksRes.data || [],
         newLeads: leadsRes.data || [],
         projects: (projectsRes.data || []).map(p => ({ ...p, total_tasks: 0, open_tasks: 0, in_progress_tasks: 0, done_tasks: 0 })),
         openQuotes: openQuotesRes.data || [],
@@ -260,77 +192,8 @@ export function Dashboard() {
       <div className="grid md:grid-cols-2 gap-6">
         {/* Left Column - Termine & Aufgaben */}
         <div className="space-y-6">
-          {/* Heutige Termine */}
-          <Section 
-            title="Heute" 
-            icon={<Calendar className="w-4 h-4" />}
-            action={{ label: "Kalender", onClick: () => router.push("/calendar") }}
-            badge={data.todayAppointments.length || undefined}
-          >
-            {data.todayAppointments.length > 0 ? (
-              <div className="space-y-2">
-                {data.todayAppointments.map((apt) => (
-                  <AppointmentCard key={apt.id} appointment={apt} />
-                ))}
-              </div>
-            ) : (
-              <EmptyState message="Keine Termine heute" small />
-            )}
-          </Section>
-
-          {/* Kommende Termine */}
-          {data.upcomingAppointments.length > 0 && (
-            <Section 
-              title="Kommende Termine" 
-              icon={<Clock className="w-4 h-4" />}
-            >
-              <div className="space-y-2">
-                {data.upcomingAppointments.map((apt) => (
-                  <AppointmentCardCompact key={apt.id} appointment={apt} />
-                ))}
-              </div>
-            </Section>
-          )}
-
-          {/* Meine Aufgaben */}
-          <Section 
-            title="Meine Aufgaben" 
-            icon={<CheckCircle className="w-4 h-4" />}
-            badge={data.myTasks.length || undefined}
-          >
-            {data.myTasks.length > 0 ? (
-              <div className="space-y-1.5">
-                {data.myTasks.map((task) => (
-                  <TaskCard 
-                    key={task.id} 
-                    task={task} 
-                    onClick={() => {
-                      if (task._source === "project_tasks" && task.project?.slug) {
-                        router.push(`/projects/${task.project.slug}?tab=tasks`);
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            ) : (
-              <EmptyState message="Keine offenen Aufgaben" small />
-            )}
-          </Section>
-
-          {/* Offene Aufgaben */}
-          {data.openTasks.length > 0 && (
-            <Section 
-              title="Nicht zugewiesen" 
-              icon={<AlertCircle className="w-4 h-4" />}
-              subtle
-            >
-              <div className="space-y-1.5">
-                {data.openTasks.map((task) => (
-                  <TaskCard key={task.id} task={task} compact />
-                ))}
-              </div>
-            </Section>
-          )}
+          <AppointmentsSection userId={profile?.id || ''} />
+          <TasksSection userId={profile?.id || ''} />
         </div>
 
         {/* Right Column - Leads & Arbeitsbereiche */}
@@ -555,114 +418,6 @@ function Section({
       </div>
       {children}
     </section>
-  );
-}
-
-// Appointment Card
-function AppointmentCard({ appointment }: { 
-  appointment: AppointmentRow & { customer?: { first_name: string; last_name: string; company_name?: string } } 
-}) {
-  const time = new Date(appointment.start_time).toLocaleTimeString("de-DE", { 
-    hour: "2-digit", 
-    minute: "2-digit" 
-  });
-  
-  const customerName = appointment.customer 
-    ? (appointment.customer.company_name || `${appointment.customer.first_name} ${appointment.customer.last_name}`)
-    : null;
-
-  return (
-    <div className="flex items-center gap-3 p-3 bg-[#0d0d0d] rounded-xl">
-      <div className="text-center min-w-[44px] px-2 py-1 bg-blue-500/10 rounded-lg">
-        <div className="text-sm font-bold text-blue-400">{time}</div>
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-white text-sm truncate">{appointment.title}</div>
-        <div className="flex items-center gap-2 mt-0.5 text-xs text-neutral-500">
-          {customerName && (
-            <span className="flex items-center gap-1 truncate">
-              <Building2 className="w-3 h-3" />
-              {customerName}
-            </span>
-          )}
-          {appointment.location_address && (
-            <span className="flex items-center gap-1 truncate">
-              <MapPin className="w-3 h-3" />
-              {appointment.location_address.split(",")[0]}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Appointment Card Compact
-function AppointmentCardCompact({ appointment }: { 
-  appointment: AppointmentRow & { customer?: { first_name: string; last_name: string; company_name?: string } } 
-}) {
-  const date = new Date(appointment.start_time);
-  const dayName = date.toLocaleDateString("de-DE", { weekday: "short" });
-  const dayNum = date.getDate();
-  const time = date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-
-  return (
-    <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-[#0d0d0d] transition-colors">
-      <div className="text-center min-w-[36px]">
-        <div className="text-[10px] text-neutral-500 uppercase">{dayName}</div>
-        <div className="text-sm font-bold text-white">{dayNum}</div>
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm text-white truncate">{appointment.title}</div>
-      </div>
-      <div className="text-xs text-neutral-500">{time}</div>
-    </div>
-  );
-}
-
-// Task Card
-function TaskCard({ task, compact, onClick }: { task: any; compact?: boolean; onClick?: () => void }) {
-  const statusColors: Record<string, string> = {
-    open: "bg-orange-500",
-    in_progress: "bg-blue-500",
-    blocked: "bg-red-500",
-    done: "bg-green-500",
-  };
-
-  const dueDate = task.due_date ? new Date(task.due_date) : null;
-  const isOverdue = dueDate && dueDate < new Date() && task.status !== "done";
-  const projectName = task.project?.name;
-
-  if (compact) {
-    return (
-      <button 
-        onClick={onClick}
-        className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-white/5 transition-colors text-left"
-      >
-        <div className={`w-1.5 h-1.5 rounded-full ${statusColors[task.status || "open"]}`} />
-        <span className="text-sm text-neutral-400 truncate flex-1">{task.title}</span>
-      </button>
-    );
-  }
-
-  return (
-    <button 
-      onClick={onClick}
-      className="w-full flex items-center gap-3 p-2.5 bg-[#0d0d0d] rounded-lg hover:bg-[#121212] transition-colors text-left"
-    >
-      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColors[task.status || "open"]}`} />
-      <div className="flex-1 min-w-0">
-        <div className="text-sm text-white truncate">{task.title}</div>
-        {projectName && (
-          <div className="text-[10px] text-neutral-500 truncate">{projectName}</div>
-        )}
-      </div>
-      {dueDate && (
-        <div className={`text-[10px] px-1.5 py-0.5 rounded ${isOverdue ? "bg-red-500/10 text-red-400" : "text-neutral-500"}`}>
-          {dueDate.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
-        </div>
-      )}
-    </button>
   );
 }
 
