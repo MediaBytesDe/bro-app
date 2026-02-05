@@ -88,14 +88,14 @@ export default function CategoriesPage() {
   // Render category options recursively for select dropdown with clear hierarchy
   const renderCategoryOptions = (nodes: CategoryNode[], level: number): JSX.Element[] => {
     return nodes.flatMap(node => {
-      // Use different prefixes based on level for clarity
+      // Use non-breaking spaces (\u00A0) so they don't collapse in HTML
       let prefix = '';
       if (level === 0) {
         prefix = '■ '; // Main categories
       } else if (level === 1) {
-        prefix = '  └─ '; // First sub-level
+        prefix = '\u00A0\u00A0└─ '; // First sub-level
       } else {
-        prefix = '    ' + '  '.repeat(level - 1) + '└─ '; // Deeper levels
+        prefix = '\u00A0\u00A0\u00A0\u00A0' + '\u00A0\u00A0'.repeat(level - 1) + '└─ '; // Deeper levels
       }
 
       return [
