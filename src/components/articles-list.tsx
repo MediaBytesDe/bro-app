@@ -15,8 +15,16 @@ import {
 } from "lucide-react";
 import { Product, formatCurrency } from "@/types/wawi";
 
+type Category = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  sort_order: number;
+};
+
 export function ArticlesList() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -31,12 +39,20 @@ export function ArticlesList() {
   async function loadData() {
     setLoading(true);
 
+    // Load product_categories for hierarchy display
+    const { data: cats } = await supabase
+      .from("product_categories")
+      .select("*")
+      .eq("is_active", true)
+      .order("sort_order");
+
     // Load products (category is TEXT field, not FK)
     const { data: prods } = await supabase
       .from("products")
       .select("*")
       .order("name");
 
+    if (cats) setCategories(cats);
     if (prods) {
       setProducts(prods);
       // All collapsed by default
@@ -57,28 +73,40 @@ export function ArticlesList() {
     );
   }, [products, search]);
 
-  // Group by TEXT category field (simple grouping since category is TEXT, not FK)
+  // Group by category with hierarchy support
   const grouped = useMemo(() => {
-    const categoryMap = new Map<string, Product[]>();
+    // Build category lookup
+    const categoryLookup = new Map<string, Category>();
+    categories.forEach(cat => categoryLookup.set(cat.name, cat));
 
-    filtered.forEach(product => {
-      const cat = product.category || "Unkategorisiert";
-      if (!categoryMap.has(cat)) {
-        categoryMap.set(cat, []);
-      }
-      categoryMap.get(cat)!.push(product);
-    });
+    // Get main categories (no parent)
+    const mainCats = categories
+      .filter(c => !c.parent_id)
+      .sort((a, b) => a.sort_order - b.sort_order);
 
-    return Array.from(categoryMap.entries())
-      .map(([name, products]) => ({
-        id: name, // Use category name as ID for expand/collapse
-        name,
-        directProducts: products,
-        totalProducts: products.length,
-        subcategories: [] // No subcategories with TEXT schema
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [filtered]);
+    // Build hierarchy with products
+    return mainCats.map(main => {
+      // Find subcategories
+      const subs = categories
+        .filter(c => c.parent_id === main.id)
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map(sub => ({
+          ...sub,
+          products: filtered.filter(p => p.category === sub.name)
+        }));
+
+      // Products directly in main category
+      const directProducts = filtered.filter(p => p.category === main.name);
+
+      return {
+        id: main.id,
+        name: main.name,
+        subcategories: subs,
+        directProducts,
+        totalProducts: subs.reduce((acc, s) => acc + s.products.length, 0) + directProducts.length
+      };
+    }).filter(m => m.totalProducts > 0 || !search);
+  }, [filtered, categories, search]);
 
   const toggleCategory = (id: string) => {
     const next = new Set(expandedCategories);
