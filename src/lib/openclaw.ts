@@ -90,7 +90,18 @@ export class OpenClawClient {
         const pending = this.messageQueue.get(runId)!;
         // Streaming delta
         if (payload.state === 'delta' && payload.message) {
-          pending.content = payload.message; // OpenClaw sends cumulative content
+          // Parse Anthropic Messages API format
+          const message = payload.message;
+          if (typeof message === 'object' && message.content && Array.isArray(message.content)) {
+            // Extract text from content blocks
+            pending.content = message.content
+              .filter((block: any) => block.type === 'text')
+              .map((block: any) => block.text)
+              .join('');
+          } else if (typeof message === 'string') {
+            // Fallback for plain string format
+            pending.content = message;
+          }
         }
         // Final state
         if (payload.state === 'final') {
