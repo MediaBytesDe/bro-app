@@ -2,6 +2,7 @@
 
 import { AuthProvider } from "@/contexts/auth-context";
 import { QueryProvider } from "@/providers/query-provider";
+import { Toaster } from "sonner";
 import type { ReactNode } from "react";
 
 interface ProvidersProps {
@@ -11,7 +12,10 @@ interface ProvidersProps {
 export function Providers({ children }: ProvidersProps) {
   return (
     <QueryProvider>
-      <AuthProvider>{children}</AuthProvider>
+      <AuthProvider>
+        {children}
+        <Toaster position="top-right" richColors />
+      </AuthProvider>
     </QueryProvider>
   );
 }
