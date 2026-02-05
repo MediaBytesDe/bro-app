@@ -23,11 +23,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const { productUrl } = await request.json();
+    const { productUrl, discountPercentage = 20 } = await request.json();
 
     if (!productUrl || !productUrl.includes("solarhandel24.de/products/")) {
       return NextResponse.json(
         { error: "Ungültige Solarhandel24 Produkt-URL" },
+        { status: 400 }
+      );
+    }
+
+    // Validate discount percentage
+    const discount = parseFloat(discountPercentage) || 20;
+    if (discount < 0 || discount > 100) {
+      return NextResponse.json(
+        { error: "Rabatt muss zwischen 0 und 100% liegen" },
         { status: 400 }
       );
     }
@@ -60,7 +69,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Map Shopify data to BROjekt product schema
-    const mappedProduct = await mapShopifyProduct(product, productUrl, supabase);
+    const mappedProduct = await mapShopifyProduct(product, productUrl, supabase, discount);
 
     // Check if product with this SKU already exists
     const { data: existingProduct } = await supabase
@@ -111,7 +120,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function mapShopifyProduct(shopifyProduct: ShopifyProduct, sourceUrl: string, supabase: any) {
+async function mapShopifyProduct(shopifyProduct: ShopifyProduct, sourceUrl: string, supabase: any, discountPercentage: number) {
   // Get first variant (usually the base variant)
   const firstVariant = shopifyProduct.variants?.[0];
   const sku = firstVariant?.sku || shopifyProduct.id.toString();
@@ -120,9 +129,14 @@ async function mapShopifyProduct(shopifyProduct: ShopifyProduct, sourceUrl: stri
   console.log(`Shopify prices for ${shopifyProduct.title}:`, {
     price: firstVariant?.price,
     compare_at_price: firstVariant?.compare_at_price,
+    discountPercentage: discountPercentage,
   });
 
-  const purchasePrice = parseFloat(firstVariant?.price || "0");
+  // Get list price and apply business customer discount
+  const listPrice = parseFloat(firstVariant?.price || "0");
+  const purchasePrice = listPrice * (1 - discountPercentage / 100);
+
+  console.log(`Price calculation: ${listPrice} - ${discountPercentage}% = ${purchasePrice}`);
 
   // Get main image
   const mainImage = shopifyProduct.images?.[0]?.src || shopifyProduct.image?.src || null;

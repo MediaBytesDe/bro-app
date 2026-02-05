@@ -17,6 +17,7 @@ interface ImportResult {
 
 export default function ShopifyImportPage() {
   const [productUrl, setProductUrl] = useState("");
+  const [discount, setDiscount] = useState(20); // Default 20% Gewerberabatt
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +38,10 @@ export default function ShopifyImportPage() {
       const response = await fetch("/api/shopify/import-product", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productUrl: productUrl.trim() }),
+        body: JSON.stringify({
+          productUrl: productUrl.trim(),
+          discountPercentage: discount
+        }),
       });
 
       const data = await response.json();
@@ -70,34 +74,51 @@ export default function ShopifyImportPage() {
         <form onSubmit={handleImport} className="space-y-4">
           <div>
             <label className="label">Produkt-URL</label>
-            <div className="flex gap-2">
-              <input
-                type="url"
-                placeholder="https://solarhandel24.de/products/..."
-                value={productUrl}
-                onChange={(e) => setProductUrl(e.target.value)}
-                disabled={loading}
-                className="input flex-1"
-              />
-              <button
-                type="submit"
-                disabled={loading}
-                className="btn btn-primary"
-              >
-                {loading ? (
-                  <>
-                    <Spinner className="w-4 h-4" />
-                    Importiere...
-                  </>
-                ) : (
-                  "Importieren"
-                )}
-              </button>
-            </div>
+            <input
+              type="url"
+              placeholder="https://solarhandel24.de/products/..."
+              value={productUrl}
+              onChange={(e) => setProductUrl(e.target.value)}
+              disabled={loading}
+              className="input w-full"
+            />
             <p className="text-xs text-neutral-600 mt-1">
               Beispiel: https://solarhandel24.de/products/aiko-solar-490w-black-frame-dual-glass-a490-mce54dw-3p-54
             </p>
           </div>
+
+          <div>
+            <label className="label">Gewerberabatt (%)</label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              placeholder="20"
+              value={discount}
+              onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+              disabled={loading}
+              className="input w-full"
+            />
+            <p className="text-xs text-neutral-600 mt-1">
+              Der Listenpreis von Solarhandel24 wird um diesen Prozentsatz reduziert
+            </p>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn btn-primary w-full"
+          >
+            {loading ? (
+              <>
+                <Spinner className="w-4 h-4" />
+                Importiere...
+              </>
+            ) : (
+              "Importieren"
+            )}
+          </button>
         </form>
 
         {/* Error Alert */}
