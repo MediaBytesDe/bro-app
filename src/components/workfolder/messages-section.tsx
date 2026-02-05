@@ -2,14 +2,7 @@
 
 import { memo } from 'react';
 import { MessageSquare } from 'lucide-react';
-
-interface Message {
-  id: string;
-  text: string;
-  sender_type: string;
-  sender_name: string;
-  created_at: string;
-}
+import type { Message } from '@/types/database';
 
 interface MessagesSectionProps {
   messages: Message[];
@@ -41,9 +34,9 @@ export const MessagesSection = memo(function MessagesSection({
               }`}
             >
               <div className="flex items-start justify-between mb-1">
-                <p className="font-medium text-sm">{msg.sender_name}</p>
+                <p className="font-medium text-sm">{msg.sender_name || 'Unbekannt'}</p>
                 <p className="text-xs text-neutral-400">
-                  {new Date(msg.created_at).toLocaleString('de-DE')}
+                  {msg.created_at ? new Date(msg.created_at).toLocaleString('de-DE') : ''}
                 </p>
               </div>
               <p className="text-neutral-200">{msg.text}</p>
@@ -54,7 +47,7 @@ export const MessagesSection = memo(function MessagesSection({
         <p className="text-neutral-500 text-center py-8">Keine Nachrichten</p>
       )}
 
-      {canSendMessage && messages.length > 5 && (
+      {messages.length > 5 && (
         <button
           className="mt-4 w-full px-4 py-2 bg-neutral-700 hover:bg-neutral-600 rounded-lg transition text-sm"
         >

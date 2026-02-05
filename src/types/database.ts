@@ -1169,6 +1169,55 @@ export interface FormSubmissionRow {
   updated_at: string | null;
 }
 
+// --- MESSAGES ---
+export interface MessageRow {
+  id: string;
+  project_id: string;
+  sender_type: string;
+  sender_id: string | null;
+  sender_name: string | null;
+  text: string;
+  attachments: Record<string, unknown>[] | null;
+  visible_to_customer: boolean | null;
+  visible_to_partners: boolean | null;
+  is_internal: boolean | null;
+  read_by: Record<string, unknown>[] | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface MessageInsert {
+  id?: string;
+  project_id: string;
+  sender_type: string;
+  sender_id?: string | null;
+  sender_name?: string | null;
+  text: string;
+  attachments?: Record<string, unknown>[] | null;
+  visible_to_customer?: boolean | null;
+  visible_to_partners?: boolean | null;
+  is_internal?: boolean | null;
+  read_by?: Record<string, unknown>[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface MessageUpdate {
+  id?: string;
+  project_id?: string;
+  sender_type?: string;
+  sender_id?: string | null;
+  sender_name?: string | null;
+  text?: string;
+  attachments?: Record<string, unknown>[] | null;
+  visible_to_customer?: boolean | null;
+  visible_to_partners?: boolean | null;
+  is_internal?: boolean | null;
+  read_by?: Record<string, unknown>[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface FormSubmissionInsert {
   id?: string;
   template_id: string;
@@ -1300,6 +1349,11 @@ export interface Database {
         Insert: FormSubmissionInsert;
         Update: FormSubmissionUpdate;
       };
+      messages: {
+        Row: MessageRow;
+        Insert: MessageInsert;
+        Update: MessageUpdate;
+      };
     };
     Enums: {
       appointment_status: AppointmentStatus;
@@ -1340,6 +1394,7 @@ export type Report = ReportRow;
 export type Document = DocumentRow;
 export type FormTemplate = FormTemplateRow;
 export type FormSubmission = FormSubmissionRow;
+export type Message = MessageRow;
 
 // Insert Types (für INSERT Queries)
 export type NewProject = ProjectInsert;
@@ -1358,6 +1413,7 @@ export type NewReport = ReportInsert;
 export type NewDocument = DocumentInsert;
 export type NewFormTemplate = FormTemplateInsert;
 export type NewFormSubmission = FormSubmissionInsert;
+export type NewMessage = MessageInsert;
 
 // ============================================================================
 // UTILITY TYPES

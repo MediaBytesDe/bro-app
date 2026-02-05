@@ -2,16 +2,7 @@
 
 import { memo } from 'react';
 import { FileText, Download, Eye } from 'lucide-react';
-
-interface Document {
-  id: string;
-  name: string;
-  file_name: string;
-  file_size: number;
-  mime_type: string;
-  storage_url: string;
-  created_at: string;
-}
+import type { Document } from '@/types/database';
 
 interface DocumentsSectionProps {
   documents: Document[];
@@ -58,28 +49,34 @@ export const DocumentsSection = memo(function DocumentsSection({
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{doc.name}</p>
                   <p className="text-sm text-neutral-400">
-                    {formatFileSize(doc.file_size)} • {doc.mime_type}
+                    {formatFileSize(doc.file_size || 0)} • {doc.mime_type || 'Unknown'}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <a
-                  href={doc.storage_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 hover:bg-neutral-600 rounded transition"
-                  title="Ansehen"
-                >
-                  <Eye className="h-4 w-4" />
-                </a>
-                <a
-                  href={doc.storage_url}
-                  download={doc.file_name}
-                  className="p-2 hover:bg-neutral-600 rounded transition"
-                  title="Herunterladen"
-                >
-                  <Download className="h-4 w-4" />
-                </a>
+                {doc.storage_url ? (
+                  <>
+                    <a
+                      href={doc.storage_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2 hover:bg-neutral-600 rounded transition"
+                      title="Ansehen"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </a>
+                    <a
+                      href={doc.storage_url}
+                      download={doc.file_name}
+                      className="p-2 hover:bg-neutral-600 rounded transition"
+                      title="Herunterladen"
+                    >
+                      <Download className="h-4 w-4" />
+                    </a>
+                  </>
+                ) : (
+                  <span className="text-xs text-neutral-500">Keine URL</span>
+                )}
               </div>
             </li>
           ))}

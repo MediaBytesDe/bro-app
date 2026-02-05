@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { HeaderSection } from './workfolder/header-section';
 import { InfoSection } from './workfolder/info-section';
 import { DocumentsSection } from './workfolder/documents-section';
 import { MessagesSection } from './workfolder/messages-section';
 import { createClient } from '@/lib/supabase/client';
-import type { Project } from '@/types/database';
+import type { Project, Document, Message } from '@/types/database';
 
 interface Props {
   project: Project;
@@ -16,36 +16,37 @@ interface Props {
 export function WorkfolderDetail({ project: initialProject }: Props) {
   const router = useRouter();
   const [project, setProject] = useState(initialProject);
-  const [documents, setDocuments] = useState<any[]>([]);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [canEdit, setCanEdit] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadProjectData();
-    checkPermissions();
-  }, [initialProject.id]);
-
-  const loadProjectData = async () => {
+  const loadProjectData = useCallback(async () => {
     try {
+      setError(null);
       const supabase = createClient();
 
       // Load documents
-      const { data: docs } = await supabase
+      const { data: docs, error: docsError } = await supabase
         .from('documents')
         .select('*')
         .eq('project_id', initialProject.id)
         .order('created_at', { ascending: false });
 
+      if (docsError) throw docsError;
+
       // Load messages
-      const { data: msgs } = await supabase
+      const { data: msgs, error: msgsError } = await supabase
         .from('messages')
         .select('*')
         .eq('project_id', initialProject.id)
         .order('created_at', { ascending: true });
 
+      if (msgsError) throw msgsError;
+
       // Load full project data with relations
-      const { data: fullProject } = await supabase
+      const { data: fullProject, error: projectError } = await supabase
         .from('projects')
         .select(`
           *,
@@ -54,19 +55,23 @@ export function WorkfolderDetail({ project: initialProject }: Props) {
         .eq('id', initialProject.id)
         .single();
 
+      if (projectError) throw projectError;
+
       if (fullProject) {
         setProject(fullProject);
       }
       setDocuments(docs || []);
       setMessages(msgs || []);
-    } catch (error) {
-      console.error('Error loading project data:', error);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Fehler beim Laden der Projektdaten';
+      console.error('Error loading project data:', err);
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
-  };
+  }, [initialProject.id]);
 
-  const checkPermissions = async () => {
+  const checkPermissions = useCallback(async () => {
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -83,11 +88,16 @@ export function WorkfolderDetail({ project: initialProject }: Props) {
         .single();
 
       setCanEdit(profile?.role && ['admin', 'mitarbeiter'].includes(profile.role));
-    } catch (error) {
-      console.error('Error checking permissions:', error);
+    } catch (err) {
+      console.error('Error checking permissions:', err);
       setCanEdit(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadProjectData();
+    checkPermissions();
+  }, [loadProjectData, checkPermissions]);
 
   const handleBack = () => {
     router.back();
@@ -104,18 +114,21 @@ export function WorkfolderDetail({ project: initialProject }: Props) {
     }
 
     try {
+      setError(null);
       const supabase = createClient();
-      const { error } = await supabase
+      const { error: deleteError } = await supabase
         .from('projects')
         .delete()
         .eq('id', project.id);
 
-      if (error) throw error;
+      if (deleteError) throw deleteError;
 
       router.push('/projects');
-    } catch (error) {
-      console.error('Error deleting project:', error);
-      alert('Fehler beim Löschen des Projekts');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Fehler beim Löschen des Projekts';
+      console.error('Error deleting project:', err);
+      setError(errorMessage);
+      alert(errorMessage);
     }
   };
 
@@ -144,6 +157,13 @@ export function WorkfolderDetail({ project: initialProject }: Props) {
         onDelete={handleDelete}
         canEdit={canEdit}
       />
+
+      {error && (
+        <div className="mx-6 mt-6 p-4 bg-red-900/20 border border-red-800 rounded-lg text-red-200">
+          <p className="font-semibold">Fehler</p>
+          <p className="text-sm">{error}</p>
+        </div>
+      )}
 
       <div className="p-6 space-y-6">
         {/* Two column layout */}
