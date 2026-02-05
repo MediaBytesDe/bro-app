@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Map Shopify data to BROjekt product schema
-    const mappedProduct = mapShopifyProduct(product, productUrl);
+    const mappedProduct = await mapShopifyProduct(product, productUrl, supabase);
 
     // Check if product with this SKU already exists
     const { data: existingProduct } = await supabase
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function mapShopifyProduct(shopifyProduct: ShopifyProduct, sourceUrl: string) {
+async function mapShopifyProduct(shopifyProduct: ShopifyProduct, sourceUrl: string, supabase: any) {
   // Get first variant (usually the base variant)
   const firstVariant = shopifyProduct.variants?.[0];
   const sku = firstVariant?.sku || shopifyProduct.id.toString();
@@ -116,11 +116,21 @@ function mapShopifyProduct(shopifyProduct: ShopifyProduct, sourceUrl: string) {
 
   // Determine category from tags
   const tags = shopifyProduct.tags || [];
-  let category = "Zubehör"; // Default
-  if (tags.includes("Solarmodule")) category = "Trina Solar";
-  else if (tags.some((t: string) => t.toLowerCase().includes("wechselrichter"))) category = "Wechselrichter";
-  else if (tags.some((t: string) => t.toLowerCase().includes("speicher"))) category = "Speicher";
-  else if (tags.some((t: string) => t.toLowerCase().includes("montage"))) category = "Aufdach-Montage";
+  let categoryName = "Zubehör"; // Default
+  if (tags.includes("Solarmodule")) categoryName = "Trina Solar";
+  else if (tags.some((t: string) => t.toLowerCase().includes("wechselrichter"))) categoryName = "Wechselrichter";
+  else if (tags.some((t: string) => t.toLowerCase().includes("speicher"))) categoryName = "Speicher";
+  else if (tags.some((t: string) => t.toLowerCase().includes("montage"))) categoryName = "Aufdach-Montage";
+
+  // Look up category_id from database
+  const { data: categoryData } = await supabase
+    .from("product_categories")
+    .select("id")
+    .eq("name", categoryName)
+    .eq("is_active", true)
+    .single();
+
+  const categoryId = categoryData?.id || null;
 
   // System defaults for calculation
   const overheadPercentage = 25; // 25% Gemeinkosten
@@ -151,7 +161,8 @@ function mapShopifyProduct(shopifyProduct: ShopifyProduct, sourceUrl: string) {
   return {
     name: shopifyProduct.title,
     description: stripHtml(shopifyProduct.body_html || ""),
-    category,
+    category: categoryName,
+    category_id: categoryId,
     manufacturer: shopifyProduct.vendor || null,
     sku,
     purchase_list_price: purchasePrice,
