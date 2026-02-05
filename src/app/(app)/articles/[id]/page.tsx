@@ -559,21 +559,89 @@ function CategorySelect({ label, categories, value, onChange }: {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  // Build tree structure
-  const mainCats = categories.filter(c => !c.parent_id).sort((a, b) => a.sort_order - b.sort_order);
-  const subCats = categories.filter(c => c.parent_id);
+  // Build recursive tree structure for unlimited nesting
+  type CategoryTreeNode = Category & { children: CategoryTreeNode[] };
 
-  const tree = mainCats.map(main => ({
-    ...main,
-    children: subCats.filter(s => s.parent_id === main.id).sort((a, b) => a.sort_order - b.sort_order)
-  }));
+  const buildTree = (parentId: string | null): CategoryTreeNode[] => {
+    return categories
+      .filter(c => c.parent_id === parentId)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map(cat => ({
+        ...cat,
+        children: buildTree(cat.id)
+      }));
+  };
 
-  // Find current category by name for display
-  const current = categories.find(c => c.name === value);
-  const parent = current?.parent_id ? categories.find(c => c.id === current.parent_id) : null;
-  const displayName = current
-    ? (parent ? `${parent.name} → ${current.name}` : current.name)
-    : value || "Kategorie wählen...";
+  const tree = buildTree(null);
+
+  // Find current category and build breadcrumb path
+  const getCategoryPath = (catName: string): string => {
+    const findPath = (cats: Category[], targetName: string, path: string[] = []): string[] | null => {
+      for (const cat of cats) {
+        if (cat.name === targetName) {
+          return [...path, cat.name];
+        }
+        const children = categories.filter(c => c.parent_id === cat.id);
+        const result = findPath(children, targetName, [...path, cat.name]);
+        if (result) return result;
+      }
+      return null;
+    };
+
+    const path = findPath(categories, catName);
+    return path ? path.join(' → ') : catName;
+  };
+
+  const displayName = value ? getCategoryPath(value) : "Kategorie wählen...";
+
+  // Recursive tree item component for unlimited nesting
+  function CategoryTreeItem({ node, level }: {
+    node: CategoryTreeNode;
+    level: number;
+  }) {
+    const hasChildren = node.children.length > 0;
+    const isExpanded = expanded.has(node.id);
+
+    return (
+      <div className="mb-1" style={{ marginLeft: level > 0 ? `${level * 1.75}rem` : 0 }}>
+        <div className="flex items-center">
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={() => toggleExpand(node.id)}
+              className="p-1.5 hover:bg-neutral-800 rounded-lg"
+            >
+              <ChevronDown className={`w-4 h-4 text-neutral-500 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+            </button>
+          ) : (
+            <div className="w-7" />
+          )}
+          <button
+            type="button"
+            onClick={() => handleSelect(node)}
+            className={`flex-1 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
+              value === node.name
+                ? 'bg-[#fa432a]/20 text-[#fa432a] font-medium'
+                : level === 0
+                  ? 'text-white font-medium hover:bg-neutral-800'
+                  : 'text-neutral-300 hover:bg-neutral-800 hover:text-white'
+            }`}
+          >
+            {node.name}
+          </button>
+        </div>
+
+        {/* Render children recursively */}
+        {isExpanded && hasChildren && (
+          <div className="mt-1 space-y-0.5">
+            {node.children.map(child => (
+              <CategoryTreeItem key={child.id} node={child} level={level + 1} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const toggleExpand = (id: string) => {
     const next = new Set(expanded);
@@ -617,56 +685,10 @@ function CategorySelect({ label, categories, value, onChange }: {
               </button>
             </div>
 
-            {/* Tree */}
+            {/* Recursive Tree */}
             <div className="max-h-80 overflow-y-auto p-2">
-              {tree.map(main => (
-                <div key={main.id} className="mb-1">
-                  {/* Main Category */}
-                  <div className="flex items-center">
-                    {main.children.length > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => toggleExpand(main.id)}
-                        className="p-1.5 hover:bg-neutral-800 rounded-lg"
-                      >
-                        <ChevronDown className={`w-4 h-4 text-neutral-500 transition-transform ${expanded.has(main.id) ? '' : '-rotate-90'}`} />
-                      </button>
-                    ) : (
-                      <div className="w-7" />
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleSelect(main)}
-                      className={`flex-1 px-3 py-2 rounded-lg text-left text-sm font-medium transition-colors ${
-                        value === main.name
-                          ? 'bg-[#fa432a]/20 text-[#fa432a]'
-                          : 'text-white hover:bg-neutral-800'
-                      }`}
-                    >
-                      {main.name}
-                    </button>
-                  </div>
-
-                  {/* Subcategories */}
-                  {expanded.has(main.id) && main.children.length > 0 && (
-                    <div className="ml-7 mt-1 space-y-0.5">
-                      {main.children.map(sub => (
-                        <button
-                          key={sub.id}
-                          type="button"
-                          onClick={() => handleSelect(sub)}
-                          className={`w-full px-3 py-2 rounded-lg text-left text-sm transition-colors ${
-                            value === sub.name
-                              ? 'bg-[#fa432a]/20 text-[#fa432a]'
-                              : 'text-neutral-300 hover:bg-neutral-800 hover:text-white'
-                          }`}
-                        >
-                          {sub.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+              {tree.map(node => (
+                <CategoryTreeItem key={node.id} node={node} level={0} />
               ))}
             </div>
           </div>
