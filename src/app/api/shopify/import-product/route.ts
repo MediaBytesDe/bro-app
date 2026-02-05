@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const { productUrl, discountPercentage = 20 } = await request.json();
+    const { productUrl, discountPercentage = 1 } = await request.json();
 
     if (!productUrl || !productUrl.includes("solarhandel24.de/products/")) {
       return NextResponse.json(
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate discount percentage
-    const discount = parseFloat(discountPercentage) || 20;
+    const discount = parseFloat(discountPercentage) || 1;
     if (discount < 0 || discount > 100) {
       return NextResponse.json(
         { error: "Rabatt muss zwischen 0 und 100% liegen" },
@@ -176,7 +176,7 @@ async function mapShopifyProduct(shopifyProduct: ShopifyProduct, sourceUrl: stri
   // System defaults for calculation
   const overheadPercentage = 25; // 25% Gemeinkosten
   const profitMargin = 30; // 30% Gewinnaufschlag
-  const taxRate = 19; // 19% MwSt
+  const taxRate = 0; // 0% MwSt (Solarprodukte sind steuerfrei)
 
   // Calculate prices using the same logic as live-calculation.tsx
   const supplierDiscount = 0; // No discount by default

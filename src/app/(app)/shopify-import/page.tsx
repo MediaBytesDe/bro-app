@@ -17,7 +17,7 @@ interface ImportResult {
 
 export default function ShopifyImportPage() {
   const [productUrl, setProductUrl] = useState("");
-  const [discount, setDiscount] = useState(20); // Default 20% Gewerberabatt
+  const [discount, setDiscount] = useState(1); // Default 1% Gewerberabatt
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
