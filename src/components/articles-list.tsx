@@ -15,22 +15,8 @@ import {
 } from "lucide-react";
 import { Product, formatCurrency } from "@/types/wawi";
 
-type Category = {
-  id: string;
-  name: string;
-  parent_id: string | null;
-  sort_order: number;
-};
-
-type ProductWithCategory = Product & {
-  category_data?: Category & {
-    parent?: Category;
-  };
-};
-
 export function ArticlesList() {
-  const [products, setProducts] = useState<ProductWithCategory[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -44,35 +30,19 @@ export function ArticlesList() {
 
   async function loadData() {
     setLoading(true);
-    
-    // Load categories
-    const { data: cats } = await supabase
-      .from("product_categories")
-      .select("*")
-      .eq("is_active", true)
-      .order("sort_order");
-    
-    // Load products with category
+
+    // Load products (category is TEXT field, not FK)
     const { data: prods } = await supabase
       .from("products")
-      .select("*, category_data:product_categories!category_id(id, name, parent_id, sort_order)")
+      .select("*")
       .order("name");
 
-    if (cats) setCategories(cats);
     if (prods) {
-      // Enrich with parent category
-      const enriched = prods.map(p => {
-        if (p.category_data && p.category_data.parent_id) {
-          const parent = cats?.find(c => c.id === p.category_data.parent_id);
-          return { ...p, category_data: { ...p.category_data, parent } };
-        }
-        return p;
-      });
-      setProducts(enriched);
+      setProducts(prods);
       // All collapsed by default
       setExpandedCategories(new Set());
     }
-    
+
     setLoading(false);
   }
 
@@ -87,39 +57,28 @@ export function ArticlesList() {
     );
   }, [products, search]);
 
-  // Group by main category → subcategory
+  // Group by TEXT category field (simple grouping since category is TEXT, not FK)
   const grouped = useMemo(() => {
-    const mainCats = categories.filter(c => !c.parent_id).sort((a, b) => a.sort_order - b.sort_order);
-    const subCats = categories.filter(c => c.parent_id);
-    
-    return mainCats.map(main => {
-      const subs = subCats
-        .filter(s => s.parent_id === main.id)
-        .sort((a, b) => a.sort_order - b.sort_order)
-        .map(sub => ({
-          ...sub,
-          products: filtered.filter(p => p.category_data?.id === sub.id)
-        }));
-      
-      // Products directly in main category (no subcategory)
-      const directProducts = filtered.filter(p => 
-        p.category_data?.id === main.id || 
-        (p.category_data?.parent?.id === main.id && !subs.find(s => s.id === p.category_data?.id))
-      );
-      
-      return {
-        ...main,
-        subcategories: subs,
-        directProducts,
-        totalProducts: subs.reduce((acc, s) => acc + s.products.length, 0) + directProducts.length
-      };
-    }).filter(m => m.totalProducts > 0 || !search);
-  }, [categories, filtered, search]);
+    const categoryMap = new Map<string, Product[]>();
 
-  // Uncategorized products
-  const uncategorized = useMemo(() => 
-    filtered.filter(p => !p.category_data),
-  [filtered]);
+    filtered.forEach(product => {
+      const cat = product.category || "Unkategorisiert";
+      if (!categoryMap.has(cat)) {
+        categoryMap.set(cat, []);
+      }
+      categoryMap.get(cat)!.push(product);
+    });
+
+    return Array.from(categoryMap.entries())
+      .map(([name, products]) => ({
+        id: name, // Use category name as ID for expand/collapse
+        name,
+        directProducts: products,
+        totalProducts: products.length,
+        subcategories: [] // No subcategories with TEXT schema
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [filtered]);
 
   const toggleCategory = (id: string) => {
     const next = new Set(expandedCategories);
@@ -232,21 +191,6 @@ export function ArticlesList() {
             )}
           </div>
         ))}
-
-        {/* Uncategorized */}
-        {uncategorized.length > 0 && (
-          <div className="border border-neutral-800 rounded-xl overflow-hidden">
-            <div className="px-4 py-3 bg-neutral-900/50">
-              <span className="font-medium text-neutral-400">Ohne Kategorie</span>
-              <span className="text-xs text-neutral-500 ml-2">({uncategorized.length})</span>
-            </div>
-            <div className="divide-y divide-neutral-800/50">
-              {uncategorized.map(product => (
-                <ProductRow key={product.id} product={product} onClick={() => router.push(`/articles/${product.id}`)} />
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Empty State */}
@@ -260,7 +204,7 @@ export function ArticlesList() {
   );
 }
 
-function ProductRow({ product, onClick }: { product: ProductWithCategory; onClick: () => void }) {
+function ProductRow({ product, onClick }: { product: Product; onClick: () => void }) {
   return (
     <div
       onClick={onClick}
