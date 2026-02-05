@@ -353,7 +353,7 @@ function CategoryNode({ node, level, expanded, toggleExpand, editingId, editName
   const totalChildren = countChildren(node);
 
   return (
-    <>
+    <div>
       <div
         className={`flex items-center gap-2 py-3 ${level > 0 ? 'bg-neutral-900/30' : ''} ${!node.is_active ? 'opacity-50' : ''}`}
         style={{ paddingLeft: `${paddingLeft}px`, paddingRight: '16px' }}
@@ -438,6 +438,6 @@ function CategoryNode({ node, level, expanded, toggleExpand, editingId, editName
           deleteCategory={deleteCategory}
         />
       ))}
-    </>
+    </div>
   );
 }
