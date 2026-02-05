@@ -97,9 +97,15 @@ export async function POST(request: NextRequest) {
 
   } catch (error: unknown) {
     console.error("Shopify import error:", error);
-    const message = error instanceof Error ? error.message : "Import fehlgeschlagen";
+    // Include full error details for debugging
+    const errorDetails = error instanceof Error
+      ? { message: error.message, stack: error.stack }
+      : { message: "Import fehlgeschlagen", error: String(error) };
+
+    console.error("Full error details:", errorDetails);
+
     return NextResponse.json(
-      { error: message },
+      { error: errorDetails.message },
       { status: 500 }
     );
   }
@@ -123,14 +129,21 @@ async function mapShopifyProduct(shopifyProduct: ShopifyProduct, sourceUrl: stri
   else if (tags.some((t: string) => t.toLowerCase().includes("montage"))) categoryName = "Aufdach-Montage";
 
   // Look up category_id from database
-  const { data: categoryData } = await supabase
+  // Use .limit(1) instead of .single() to avoid errors if category doesn't exist
+  const { data: categoryData, error: categoryError } = await supabase
     .from("product_categories")
     .select("id")
     .eq("name", categoryName)
     .eq("is_active", true)
-    .single();
+    .limit(1)
+    .maybeSingle();
 
   const categoryId = categoryData?.id || null;
+
+  // Log if category not found for debugging
+  if (!categoryId && !categoryError) {
+    console.warn(`Category "${categoryName}" not found in database`);
+  }
 
   // System defaults for calculation
   const overheadPercentage = 25; // 25% Gemeinkosten
