@@ -663,7 +663,7 @@ function CategorySelect({ label, categories, value, onChange }: {
         onClick={() => setOpen(true)}
         className="w-full px-4 py-3 rounded-xl bg-neutral-900 border border-neutral-800 text-left text-white focus:outline-none focus:border-[#fa432a]/50 transition-colors flex items-center justify-between"
       >
-        <span className={current ? "text-white" : "text-neutral-500"}>
+        <span className={value ? "text-white" : "text-neutral-500"}>
           {displayName}
         </span>
         <ChevronDown className="w-4 h-4 text-neutral-500" />
