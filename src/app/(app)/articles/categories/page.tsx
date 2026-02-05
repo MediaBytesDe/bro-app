@@ -91,7 +91,7 @@ export default function CategoriesPage() {
       // Use different prefixes based on level for clarity
       let prefix = '';
       if (level === 0) {
-        prefix = '📁 '; // Main categories
+        prefix = '■ '; // Main categories
       } else if (level === 1) {
         prefix = '  └─ '; // First sub-level
       } else {
