@@ -26,7 +26,7 @@ CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at DESC
 
 -- Appointments table
 CREATE INDEX IF NOT EXISTS idx_appointments_customer_id ON appointments(customer_id);
-CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(appointment_date);
+CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(date);
 CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments(status);
 
 -- Tasks table
@@ -49,9 +49,8 @@ CREATE INDEX IF NOT EXISTS idx_project_partners_project_id ON project_partners(p
 CREATE INDEX IF NOT EXISTS idx_project_partners_partner_id ON project_partners(partner_id);
 
 -- Job diary entries
-CREATE INDEX IF NOT EXISTS idx_job_diary_project_id ON job_diary_entries(project_id);
+-- Note: idx_job_diary_job_id and idx_job_diary_date already exist in 20260204150000_job_diary.sql
 CREATE INDEX IF NOT EXISTS idx_job_diary_partner_user ON job_diary_entries(partner_user_id);
-CREATE INDEX IF NOT EXISTS idx_job_diary_date ON job_diary_entries(work_date DESC);
 
 -- Composite indexes for common query patterns
 CREATE INDEX IF NOT EXISTS idx_projects_customer_status
@@ -62,7 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_project_visible
   WHERE visible_to_customer = true;
 
 CREATE INDEX IF NOT EXISTS idx_appointments_customer_date
-  ON appointments(customer_id, appointment_date);
+  ON appointments(customer_id, date);
 
 -- Add comments
 COMMENT ON INDEX idx_customers_auth_user_id IS 'Optimize user profile lookups';
