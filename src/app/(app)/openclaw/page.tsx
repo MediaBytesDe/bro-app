@@ -1,320 +1,200 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { Spinner } from "@/components/ui/spinner";
+import { useState } from "react";
+import { useOpenClaw } from "@/hooks/useOpenClaw";
+import type { OpenClawAgent } from "@/hooks/useOpenClaw";
 import {
   Bot,
-  Activity,
-  Brain,
-  Clock,
-  Zap,
+  Send,
+  Loader2,
   AlertCircle,
-  CheckCircle,
-  Settings,
-  RefreshCw,
-  Play,
-  Pause,
-  FileText,
+  User,
 } from "lucide-react";
-import { formatRelativeTime, formatDate } from "@/lib/utils";
-import type { Log, Skill } from "@/types/database";
 
-interface Stats {
-  totalLogs: number;
-  todayLogs: number;
-  activeSkills: number;
-  totalSkills: number;
-  lastHeartbeat: string | null;
-  errors24h: number;
+const AGENTS = [
+  { id: "main" as const, name: "Bro (Main)", color: "blue" },
+  { id: "einkauf" as const, name: "Einkauf", color: "green" },
+  { id: "kundenservice" as const, name: "Kundenservice", color: "purple" },
+];
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+  agent: OpenClawAgent;
+  timestamp: string;
 }
 
 export default function OpenClawPage() {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [recentLogs, setRecentLogs] = useState<Log[]>([]);
-  const [skills, setSkills] = useState<Skill[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [activeAgent, setActiveAgent] = useState<OpenClawAgent>("main");
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
 
-  const supabase = createClient();
+  const { ask, loading, error } = useOpenClaw();
 
-  useEffect(() => {
-    loadData();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(loadData, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || loading) return;
 
-  async function loadData() {
-    try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
+    const userMessage = input.trim();
+    const timestamp = new Date().toISOString();
 
-      const [logsRes, todayLogsRes, skillsRes, heartbeatRes, errorsRes] = await Promise.all([
-        supabase.from("logs").select("*", { count: "exact", head: true }),
-        supabase.from("logs").select("*", { count: "exact", head: true }).gte("created_at", today.toISOString()),
-        supabase.from("skills").select("*").order("name"),
-        supabase.from("logs").select("created_at").eq("type", "heartbeat").order("created_at", { ascending: false }).limit(1),
-        supabase.from("logs").select("*", { count: "exact", head: true }).eq("type", "error").gte("created_at", yesterday.toISOString()),
+    setInput("");
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "user",
+        content: userMessage,
+        agent: activeAgent,
+        timestamp,
+      },
+    ]);
+
+    const response = await ask(userMessage, activeAgent);
+
+    if (response) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: response,
+          agent: activeAgent,
+          timestamp: new Date().toISOString(),
+        },
       ]);
-
-      const activeSkills = (skillsRes.data || []).filter((s) => s.active);
-
-      setStats({
-        totalLogs: logsRes.count || 0,
-        todayLogs: todayLogsRes.count || 0,
-        activeSkills: activeSkills.length,
-        totalSkills: skillsRes.data?.length || 0,
-        lastHeartbeat: heartbeatRes.data?.[0]?.created_at || null,
-        errors24h: errorsRes.count || 0,
-      });
-
-      setSkills(skillsRes.data || []);
-
-      // Load recent logs
-      const { data: logs } = await supabase
-        .from("logs")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(10);
-      setRecentLogs(logs || []);
-    } catch (err) {
-      console.error("Error loading openclaw data:", err);
-    } finally {
-      setLoading(false);
     }
-  }
-
-  async function toggleSkill(skill: Skill) {
-    await supabase
-      .from("skills")
-      .update({ active: !skill.active, updated_at: new Date().toISOString() })
-      .eq("id", skill.id);
-    await loadData();
-  }
-
-  async function logHeartbeat() {
-    await supabase.from("logs").insert({
-      type: "heartbeat",
-      message: "Manual heartbeat triggered from dashboard",
-      metadata: { source: "dashboard", timestamp: new Date().toISOString() },
-    });
-    await loadData();
-  }
-
-  const typeIcons: Record<string, React.ReactNode> = {
-    heartbeat: <Activity className="w-4 h-4 text-green-400" />,
-    task: <CheckCircle className="w-4 h-4 text-blue-400" />,
-    lead: <Zap className="w-4 h-4 text-yellow-400" />,
-    email: <FileText className="w-4 h-4 text-purple-400" />,
-    error: <AlertCircle className="w-4 h-4 text-red-400" />,
-    system: <Settings className="w-4 h-4 text-neutral-400" />,
   };
 
-  if (loading) {
-    return (
-      <div className="p-8 text-center">
-        <Spinner className="mx-auto" />
-        <p className="text-neutral-500 mt-4">Lade Dashboard...</p>
-      </div>
-    );
-  }
-
-  const heartbeatStatus = stats?.lastHeartbeat
-    ? new Date().getTime() - new Date(stats.lastHeartbeat).getTime() < 60 * 60 * 1000
-      ? "online"
-      : "idle"
-    : "unknown";
+  const activeAgentInfo = AGENTS.find((a) => a.id === activeAgent);
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col h-[calc(100vh-4rem)]">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-white flex items-center gap-3">
-          <Bot className="w-7 h-7 text-orange-400" />
-          OpenClaw Dashboard
+      <div className="p-6 border-b border-[#1f1f1f]">
+        <h1 className="text-xl font-bold text-white flex items-center gap-2">
+          <Bot className="w-6 h-6 text-orange-400" />
+          OpenClaw AI Assistenten
         </h1>
-        <div className="flex items-center gap-2">
-          <span className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm ${
-            heartbeatStatus === "online"
-              ? "bg-green-500/20 text-green-400"
-              : heartbeatStatus === "idle"
-              ? "bg-yellow-500/20 text-yellow-400"
-              : "bg-neutral-500/20 text-neutral-400"
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${
-              heartbeatStatus === "online" ? "bg-green-400 animate-pulse" : 
-              heartbeatStatus === "idle" ? "bg-yellow-400" : "bg-neutral-400"
-            }`} />
-            {heartbeatStatus === "online" ? "Online" : heartbeatStatus === "idle" ? "Idle" : "Unbekannt"}
-          </span>
-          <button onClick={loadData} className="btn btn-ghost btn-icon" title="Aktualisieren">
-            <RefreshCw className="w-4 h-4" />
+        <p className="text-sm text-neutral-400 mt-1">
+          Chatten Sie mit spezialisierten KI-Agenten
+        </p>
+      </div>
+
+      {/* Agent Tabs */}
+      <div className="flex border-b border-[#1f1f1f] bg-[#0d0d0d]">
+        {AGENTS.map((agent) => (
+          <button
+            key={agent.id}
+            onClick={() => setActiveAgent(agent.id)}
+            className={`px-6 py-3 text-sm font-medium transition-colors ${
+              activeAgent === agent.id
+                ? agent.id === "main"
+                  ? "bg-[#111] text-white border-b-2 border-blue-500"
+                  : agent.id === "einkauf"
+                  ? "bg-[#111] text-white border-b-2 border-green-500"
+                  : "bg-[#111] text-white border-b-2 border-purple-500"
+                : "text-neutral-400 hover:text-neutral-200 hover:bg-[#111]/50"
+            }`}
+          >
+            {agent.name}
           </button>
-        </div>
+        ))}
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-green-500/20">
-              <Activity className="w-5 h-5 text-green-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{stats?.todayLogs || 0}</p>
-              <p className="text-xs text-neutral-500">Logs heute</p>
-            </div>
+      {/* Messages */}
+      <div className="flex-1 overflow-auto p-6 space-y-4 bg-[#0a0a0a]">
+        {messages.length === 0 && (
+          <div className="text-center text-neutral-500 mt-8">
+            <Bot className="w-12 h-12 mx-auto mb-3 opacity-50" />
+            <p>Keine Nachrichten. Stellen Sie eine Frage an {activeAgentInfo?.name}.</p>
           </div>
-        </div>
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-blue-500/20">
-              <Brain className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-white">
-                {stats?.activeSkills}/{stats?.totalSkills}
-              </p>
-              <p className="text-xs text-neutral-500">Skills aktiv</p>
-            </div>
-          </div>
-        </div>
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-purple-500/20">
-              <Clock className="w-5 h-5 text-purple-400" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-white">
-                {stats?.lastHeartbeat ? formatRelativeTime(stats.lastHeartbeat) : "—"}
-              </p>
-              <p className="text-xs text-neutral-500">Letzter Heartbeat</p>
-            </div>
-          </div>
-        </div>
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${stats?.errors24h ? "bg-red-500/20" : "bg-neutral-500/20"}`}>
-              <AlertCircle className={`w-5 h-5 ${stats?.errors24h ? "text-red-400" : "text-neutral-400"}`} />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{stats?.errors24h || 0}</p>
-              <p className="text-xs text-neutral-500">Fehler (24h)</p>
-            </div>
-          </div>
-        </div>
-      </div>
+        )}
 
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Recent Activity */}
-        <div className="card">
-          <div className="p-4 border-b border-[#1f1f1f] flex items-center justify-between">
-            <h2 className="font-bold text-white flex items-center gap-2">
-              <Activity className="w-5 h-5 text-green-400" />
-              Letzte Aktivität
-            </h2>
-            <a href="/logs" className="text-sm text-orange-400 hover:text-orange-300">
-              Alle Logs →
-            </a>
-          </div>
-          <div className="divide-y divide-[#1f1f1f] max-h-[400px] overflow-y-auto">
-            {recentLogs.length === 0 ? (
-              <p className="p-4 text-neutral-500 text-center">Keine Logs</p>
-            ) : (
-              recentLogs.map((log) => (
-                <div key={log.id} className="p-3 flex items-start gap-3">
-                  {typeIcons[log.type] || <FileText className="w-4 h-4 text-neutral-400" />}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white truncate">{log.message || "—"}</p>
-                    <p className="text-xs text-neutral-500">{log.created_at ? formatRelativeTime(log.created_at) : "—"}</p>
-                  </div>
-                </div>
-              ))
+        {messages.map((msg, i) => (
+          <div
+            key={i}
+            className={`flex gap-3 ${
+              msg.role === "user" ? "justify-end" : "justify-start"
+            }`}
+          >
+            {msg.role === "assistant" && (
+              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+                <Bot className="w-5 h-5 text-white" />
+              </div>
+            )}
+
+            <div
+              className={`max-w-[80%] rounded-lg px-4 py-3 ${
+                msg.role === "user"
+                  ? "bg-blue-600 text-white"
+                  : "bg-[#111] text-neutral-100 border border-[#262626]"
+              }`}
+            >
+              <p className="whitespace-pre-wrap">{msg.content}</p>
+              <p className="text-xs opacity-50 mt-1">
+                {new Date(msg.timestamp).toLocaleTimeString("de-DE")}
+              </p>
+            </div>
+
+            {msg.role === "user" && (
+              <div className="w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center flex-shrink-0">
+                <User className="w-5 h-5 text-neutral-300" />
+              </div>
             )}
           </div>
-        </div>
+        ))}
 
-        {/* Skills */}
-        <div className="card">
-          <div className="p-4 border-b border-[#1f1f1f] flex items-center justify-between">
-            <h2 className="font-bold text-white flex items-center gap-2">
-              <Brain className="w-5 h-5 text-blue-400" />
-              Skills
-            </h2>
-            <a href="/skills" className="text-sm text-orange-400 hover:text-orange-300">
-              Alle Skills →
-            </a>
+        {loading && (
+          <div className="flex gap-3 justify-start">
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+              <Bot className="w-5 h-5 text-white" />
+            </div>
+            <div className="bg-[#111] text-neutral-100 rounded-lg px-4 py-3 border border-[#262626]">
+              <Loader2 className="w-5 h-5 animate-spin" />
+            </div>
           </div>
-          <div className="divide-y divide-[#1f1f1f] max-h-[400px] overflow-y-auto">
-            {skills.length === 0 ? (
-              <p className="p-4 text-neutral-500 text-center">Keine Skills</p>
+        )}
+      </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="px-6 py-2">
+          <div className="card bg-red-900/20 border border-red-900/50 p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm text-red-300">{error}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Input */}
+      <form onSubmit={handleSubmit} className="border-t border-[#1f1f1f] p-4 bg-[#0d0d0d]">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder={`Fragen Sie ${activeAgentInfo?.name}...`}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            disabled={loading}
+            className="input flex-1"
+          />
+          <button
+            type="submit"
+            disabled={loading || !input.trim()}
+            className="btn btn-primary"
+          >
+            {loading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              skills.map((skill) => (
-                <div key={skill.id} className="p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-2 h-2 rounded-full ${skill.active ? "bg-green-400" : "bg-neutral-600"}`} />
-                    <div className="min-w-0">
-                      <p className="text-sm text-white truncate">{skill.name}</p>
-                      <p className="text-xs text-neutral-500">{skill.trigger}</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => toggleSkill(skill)}
-                    className={`btn btn-ghost btn-sm ${skill.active ? "text-green-400" : "text-neutral-500"}`}
-                    title={skill.active ? "Deaktivieren" : "Aktivieren"}
-                  >
-                    {skill.active ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  </button>
-                </div>
-              ))
+              <>
+                <Send className="w-4 h-4" />
+                Senden
+              </>
             )}
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Actions */}
-      <div className="card p-4">
-        <h2 className="font-bold text-white mb-4 flex items-center gap-2">
-          <Zap className="w-5 h-5 text-yellow-400" />
-          Quick Actions
-        </h2>
-        <div className="flex flex-wrap gap-3">
-          <button onClick={logHeartbeat} className="btn btn-secondary">
-            <Activity className="w-4 h-4" />
-            Heartbeat auslösen
           </button>
-          <a href="/skills" className="btn btn-secondary">
-            <Brain className="w-4 h-4" />
-            Skills verwalten
-          </a>
-          <a href="/logs" className="btn btn-secondary">
-            <FileText className="w-4 h-4" />
-            Logs ansehen
-          </a>
-          <a href="/openclaw/cron" className="btn btn-secondary">
-            <Clock className="w-4 h-4" />
-            Cron Jobs
-          </a>
         </div>
-      </div>
-
-      {/* System Info */}
-      <div className="card p-4 bg-[#111] text-sm">
-        <h3 className="text-neutral-400 text-xs uppercase tracking-wide mb-2">System Info</h3>
-        <div className="grid sm:grid-cols-3 gap-4 text-neutral-500">
-          <div>
-            <span className="text-neutral-400">Agent:</span> Cody (BROjekt)
-          </div>
-          <div>
-            <span className="text-neutral-400">Logs total:</span> {stats?.totalLogs || 0}
-          </div>
-          <div>
-            <span className="text-neutral-400">Stand:</span> {formatDate(new Date().toISOString())}
-          </div>
-        </div>
-      </div>
+      </form>
     </div>
   );
 }
