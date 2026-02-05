@@ -1,19 +1,20 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
+import { isValidUUID } from "@/lib/validation";
 
 export async function POST(req: NextRequest) {
   try {
     // Auth check
     const authSupabase = await createClient();
     const { data: { user } } = await authSupabase.auth.getUser();
-    
+
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const supabase = createAdminClient();
-    
+
     const formData = await req.formData();
     const file = formData.get("file") as File;
     const projectId = formData.get("projectId") as string;
@@ -23,6 +24,77 @@ export async function POST(req: NextRequest) {
 
     if (!file) {
       return NextResponse.json({ error: "Keine Datei" }, { status: 400 });
+    }
+
+    // SECURITY: File type validation
+    const allowedTypes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ];
+    if (!allowedTypes.includes(file.type)) {
+      return NextResponse.json(
+        { error: "Dateityp nicht erlaubt. Erlaubt: JPG, PNG, PDF, Word, Excel" },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: File size limit (10MB)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: "Datei zu groß. Maximum: 10MB" },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: Authorization check - verify user has access to project/customer
+    const { data: profile } = await authSupabase
+      .from("users")
+      .select("role")
+      .eq("auth_id", user.id)
+      .single();
+
+    const isStaff = profile?.role && ["admin", "mitarbeiter", "superadmin"].includes(profile.role);
+
+    if (!isStaff) {
+      // For non-staff users, verify they own the project/customer
+      if (projectId) {
+        const { data: project } = await authSupabase
+          .from("projects")
+          .select("customer_id")
+          .eq("id", projectId)
+          .single();
+
+        const { data: customer } = await authSupabase
+          .from("customers")
+          .select("id")
+          .eq("auth_user_id", user.id)
+          .single();
+
+        if (!project || !customer || project.customer_id !== customer.id) {
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+      } else if (customerId) {
+        const { data: customer } = await authSupabase
+          .from("customers")
+          .select("id")
+          .eq("auth_user_id", user.id)
+          .eq("id", customerId)
+          .single();
+
+        if (!customer) {
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+      } else {
+        return NextResponse.json(
+          { error: "projectId oder customerId erforderlich" },
+          { status: 400 }
+        );
+      }
     }
 
     // Convert File to Buffer

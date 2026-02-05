@@ -73,8 +73,7 @@ export function QuotesList() {
       .from("wawi_quotes")
       .select(`
         *,
-        customer:customers(id, company_name, first_name, last_name),
-        project:projects(id, name)
+        customer:customers(id, company_name, first_name, last_name)
       `)
       .order("created_at", { ascending: false });
 

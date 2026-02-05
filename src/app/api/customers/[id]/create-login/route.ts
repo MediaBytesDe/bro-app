@@ -139,18 +139,18 @@ export async function POST(
       );
     }
 
-    // SECURITY: Don't return password in response
-    // Instead, return success and indicate password was generated
-    // The password should be sent via email to the customer
+    // SECURITY: Never return password in response
+    // TODO: Implement email-based password delivery
+    // For now, log securely (only visible in server logs, not response)
+    if (!password) {
+      console.log(`[SECURITY] Temporary password created for ${customer.email} - Password must be delivered securely to customer`);
+    }
+
     return NextResponse.json({
       success: true,
       userId: authData.user.id,
       email: customer.email,
-      passwordGenerated: !password, // Indicate if we generated a password
-      // SECURITY FIX: Password only returned if explicitly provided by caller
-      // This is a temporary measure - ideally use email-based password reset
-      ...(password ? {} : { tempPassword: userPassword }), // Only for initial setup
-      message: `Login für ${customer.email} erstellt`,
+      message: `Login für ${customer.email} erstellt. ${!password ? 'Passwort wurde generiert und muss dem Kunden sicher übermittelt werden.' : ''}`,
     });
 
   } catch (error: unknown) {

@@ -35,6 +35,72 @@ export async function POST(request: Request) {
       );
     }
 
+    // SECURITY: File type validation
+    const allowedTypes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ];
+    if (file.type && !allowedTypes.includes(file.type)) {
+      return NextResponse.json(
+        { error: "File type not allowed. Allowed: JPG, PNG, PDF, Word, Excel" },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: File size limit (10MB)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: "File too large. Maximum: 10MB" },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: Authorization check - verify user has access to project/customer
+    const { data: profile } = await supabase
+      .from("users")
+      .select("role")
+      .eq("auth_id", user.id)
+      .single();
+
+    const isStaff = profile?.role && ["admin", "mitarbeiter", "superadmin"].includes(profile.role);
+
+    if (!isStaff) {
+      // For non-staff users, verify they own the project/customer
+      if (projectId) {
+        const { data: project } = await supabase
+          .from("projects")
+          .select("customer_id")
+          .eq("id", projectId)
+          .single();
+
+        const { data: customer } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("auth_user_id", user.id)
+          .single();
+
+        if (!project || !customer || project.customer_id !== customer.id) {
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+      } else if (customerId) {
+        const { data: customer } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("auth_user_id", user.id)
+          .eq("id", customerId)
+          .single();
+
+        if (!customer) {
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+      }
+    }
+
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);

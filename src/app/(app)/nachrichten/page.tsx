@@ -13,6 +13,7 @@ import {
   File,
   X,
   MessageSquare,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,7 @@ interface Message {
   id: string;
   text: string;
   sender_type: "customer" | "brojekt" | "partner";
+  sender_id: string | null;
   sender_name: string;
   created_at: string;
   read_by: Array<{
@@ -29,6 +31,7 @@ interface Message {
     at: string;
   }>;
   attachments: any[];
+  is_internal: boolean;
   project?: {
     id: string;
     name: string;
@@ -38,19 +41,20 @@ interface Message {
 interface Project {
   id: string;
   name: string;
+  customer_name: string;
   unread_count: number;
 }
 
-export default function NachrichtenPage() {
+export default function AdminNachrichtenPage() {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [customerId, setCustomerId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [isInternal, setIsInternal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -118,44 +122,51 @@ export default function NachrichtenPage() {
   }, [messages]);
 
   async function loadProjects() {
-    if (!profile?.auth_id) { setLoading(false); return; }
+    if (!profile?.id) {
+      setLoading(false);
+      return;
+    }
 
     try {
-      const { data: customer } = await supabase
-        .from("customers")
-        .select("id")
-        .eq("auth_user_id", profile.auth_id)
-        .single();
-
-      if (!customer) {
-        setLoading(false);
-        return;
-      }
-
-      setCustomerId(customer.id);
-
-      // Load projects with unread message counts
+      // Admin hat Zugriff auf alle Projekte
       const { data: projectsData } = await supabase
         .from("projects")
-        .select("id, name")
-        .eq("customer_id", customer.id)
-        .order("created_at", { ascending: false });
+        .select(`
+          id,
+          name,
+          customer:customers(id, company_name, first_name, last_name)
+        `)
+        .order("updated_at", { ascending: false });
 
       if (projectsData && projectsData.length > 0) {
-        // Get unread counts for each project
+        // Format customer name und lade unread counts
         const projectsWithCounts = await Promise.all(
-          projectsData.map(async (p) => {
+          projectsData.map(async (p: any) => {
+            const customerName =
+              p.customer?.company_name ||
+              `${p.customer?.first_name || ""} ${p.customer?.last_name || ""}`.trim();
+
+            // Lade Nachrichten für unread count
             const { data: messages } = await supabase
               .from("messages")
               .select("read_by")
               .eq("project_id", p.id)
-              .neq("sender_type", "customer");
+              .neq("sender_type", "brojekt");
 
-            const unreadCount = messages?.filter(
-              (m) => !m.read_by.some((r: any) => r.type === "customer" && r.id === customer.id)
-            ).length || 0;
+            const unreadCount =
+              messages?.filter(
+                (m: any) =>
+                  !m.read_by.some(
+                    (r: any) => r.type === "profile" && r.id === profile.id
+                  )
+              ).length || 0;
 
-            return { ...p, unread_count: unreadCount };
+            return {
+              id: p.id,
+              name: p.name,
+              customer_name: customerName,
+              unread_count: unreadCount,
+            };
           })
         );
 
@@ -163,7 +174,7 @@ export default function NachrichtenPage() {
 
         // Auto-select first project
         if (!selectedProject) {
-          setSelectedProject(projectsData[0].id);
+          setSelectedProject(projectsWithCounts[0].id);
         }
       }
     } catch (err) {
@@ -174,12 +185,12 @@ export default function NachrichtenPage() {
   }
 
   async function loadMessages() {
-    if (!selectedProject) return;
+    if (!selectedProject || !profile?.id) return;
 
     const { data: messagesData } = await supabase
       .from("messages")
       .select(`
-        id, text, sender_type, sender_name, created_at, read_by, attachments,
+        id, text, sender_type, sender_id, sender_name, created_at, read_by, attachments, is_internal,
         project:projects(id, name)
       `)
       .eq("project_id", selectedProject)
@@ -188,17 +199,22 @@ export default function NachrichtenPage() {
     setMessages(messagesData || []);
 
     // Mark messages as read
-    if (messagesData && customerId) {
+    if (messagesData && profile.id) {
       const unreadMessages = messagesData.filter(
-        (m) => m.sender_type !== "customer" &&
-               !m.read_by.some((r) => r.type === "customer" && r.id === customerId)
+        (m) =>
+          m.sender_type !== "brojekt" &&
+          !m.read_by.some((r) => r.type === "profile" && r.id === profile.id)
       );
 
       if (unreadMessages.length > 0) {
         for (const msg of unreadMessages) {
           const updatedReadBy = [
             ...msg.read_by,
-            { type: "customer", id: customerId, at: new Date().toISOString() }
+            {
+              type: "profile",
+              id: profile.id,
+              at: new Date().toISOString(),
+            },
           ];
 
           await supabase
@@ -211,7 +227,12 @@ export default function NachrichtenPage() {
   }
 
   async function sendMessage() {
-    if ((!newMessage.trim() && attachments.length === 0) || !selectedProject || !customerId) return;
+    if (
+      (!newMessage.trim() && attachments.length === 0) ||
+      !selectedProject ||
+      !profile?.id
+    )
+      return;
 
     setSending(true);
 
@@ -241,21 +262,23 @@ export default function NachrichtenPage() {
 
     const { error } = await supabase.from("messages").insert({
       project_id: selectedProject,
-      sender_type: "customer",
-      sender_id: customerId,
-      sender_name: profile?.display_name || "Kunde",
+      sender_type: "brojekt",
+      sender_id: profile.id,
+      sender_name: profile.display_name || "BROjekt Team",
       text: newMessage.trim(),
       attachments: uploadedAttachments.length > 0 ? uploadedAttachments : [],
-      visible_to_customer: true,
-      visible_to_partners: true,
-      is_internal: false,
+      visible_to_customer: !isInternal,
+      visible_to_partners: !isInternal,
+      is_internal: isInternal,
     });
 
     if (error) {
+      console.error("Error sending message:", error);
       toast.error("Fehler beim Senden");
     } else {
       setNewMessage("");
       setAttachments([]);
+      setIsInternal(false);
       // Removed loadMessages() - Realtime subscription will add the message automatically
     }
 
@@ -318,17 +341,12 @@ export default function NachrichtenPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Nachrichten</h1>
           <p className="text-neutral-400 mt-1">
-            Kommunizieren Sie direkt mit BROjekt
+            Projekt-Kommunikation mit Kunden und Partnern
           </p>
         </div>
         <div className="card p-12 text-center">
           <MessageSquare className="w-12 h-12 mx-auto text-neutral-600 mb-4" />
-          <p className="text-neutral-400">
-            Sie haben noch keine aktiven Projekte
-          </p>
-          <p className="text-sm text-neutral-500 mt-2">
-            Sobald Sie ein Projekt haben, können Sie hier mit uns kommunizieren
-          </p>
+          <p className="text-neutral-400">Keine Projekte vorhanden</p>
         </div>
       </div>
     );
@@ -339,7 +357,7 @@ export default function NachrichtenPage() {
       <div>
         <h1 className="text-2xl font-bold text-white">Nachrichten</h1>
         <p className="text-neutral-400 mt-1">
-          Kommunizieren Sie direkt mit BROjekt
+          Projekt-Kommunikation mit Kunden und Partnern
         </p>
       </div>
 
@@ -359,19 +377,31 @@ export default function NachrichtenPage() {
                     : "hover:bg-[#1a1a1a]"
                 )}
               >
-                <div className="flex items-center justify-between">
-                  <span
-                    className={cn(
-                      "text-sm truncate",
-                      selectedProject === project.id
-                        ? "text-white"
-                        : "text-neutral-300"
-                    )}
-                  >
-                    {project.name}
-                  </span>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className={cn(
+                        "text-sm font-medium truncate",
+                        selectedProject === project.id
+                          ? "text-white"
+                          : "text-neutral-300"
+                      )}
+                    >
+                      {project.name}
+                    </div>
+                    <div
+                      className={cn(
+                        "text-xs truncate",
+                        selectedProject === project.id
+                          ? "text-blue-200"
+                          : "text-neutral-500"
+                      )}
+                    >
+                      {project.customer_name}
+                    </div>
+                  </div>
                   {project.unread_count > 0 && (
-                    <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
+                    <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full shrink-0">
                       {project.unread_count}
                     </span>
                   )}
@@ -397,7 +427,7 @@ export default function NachrichtenPage() {
                 {/* Messages */}
                 <div className="space-y-3">
                   {dateMessages.map((msg) => {
-                    const isOwn = msg.sender_type === "customer";
+                    const isOwn = msg.sender_type === "brojekt";
 
                     return (
                       <div
@@ -413,21 +443,34 @@ export default function NachrichtenPage() {
                           {!isOwn && (
                             <p className="text-xs font-medium text-neutral-500">
                               {msg.sender_name}
-                              {msg.sender_type === "brojekt" && (
+                              {msg.sender_type === "customer" && (
                                 <span className="ml-1 text-blue-400">
-                                  (BROjekt)
+                                  (Kunde)
+                                </span>
+                              )}
+                              {msg.sender_type === "partner" && (
+                                <span className="ml-1 text-green-400">
+                                  (Partner)
                                 </span>
                               )}
                             </p>
                           )}
                           <div
                             className={cn(
-                              "rounded-2xl px-4 py-2",
+                              "rounded-2xl px-4 py-2 relative",
                               isOwn
-                                ? "bg-blue-600 text-white rounded-br-sm"
+                                ? msg.is_internal
+                                  ? "bg-orange-600 text-white rounded-br-sm"
+                                  : "bg-blue-600 text-white rounded-br-sm"
                                 : "bg-[#1a1a1a] text-neutral-200 rounded-bl-sm"
                             )}
                           >
+                            {msg.is_internal && (
+                              <div className="flex items-center gap-1 text-xs text-orange-200 mb-1">
+                                <Lock className="w-3 h-3" />
+                                <span>Interne Notiz</span>
+                              </div>
+                            )}
                             <p className="text-sm whitespace-pre-wrap">
                               {msg.text}
                             </p>
@@ -510,6 +553,20 @@ export default function NachrichtenPage() {
             </div>
           )}
 
+          {/* Internal Note Toggle */}
+          <div className="px-4 py-2 border-t border-neutral-800">
+            <label className="flex items-center gap-2 text-sm text-neutral-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isInternal}
+                onChange={(e) => setIsInternal(e.target.checked)}
+                className="rounded border-neutral-600 bg-[#111] text-orange-600 focus:ring-orange-600"
+              />
+              <Lock className="w-4 h-4" />
+              <span>Interne Notiz (nur für BROjekt sichtbar)</span>
+            </label>
+          </div>
+
           {/* Input */}
           <div className="flex items-center gap-2 p-4 border-t border-neutral-800">
             <input
@@ -535,7 +592,9 @@ export default function NachrichtenPage() {
             />
             <button
               onClick={sendMessage}
-              disabled={sending || (!newMessage.trim() && attachments.length === 0)}
+              disabled={
+                sending || (!newMessage.trim() && attachments.length === 0)
+              }
               className="btn-primary p-2"
             >
               {sending ? (
