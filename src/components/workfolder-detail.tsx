@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
@@ -174,11 +174,7 @@ export function WorkfolderDetail({ project }: Props) {
   const supabase = createClient();
   const [tradeOptions, setTradeOptions] = useState(getTradeOptions());
 
-  useEffect(() => {
-    loadData();
-  }, [project.id]);
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoading(true);
     
     // Trades aus DB laden (für Labels)
@@ -335,9 +331,13 @@ export function WorkfolderDetail({ project }: Props) {
     setFormSubmissions(submissions || []);
 
     setLoading(false);
-  }
+  }, [project.id, project.customer_id, project.parent_id]);
 
-  async function updateStatus(newStatus: string) {
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const updateStatus = useCallback(async (newStatus: string) => {
     const { error } = await supabase
       .from("projects")
       .update({ workfolder_status: newStatus })
@@ -348,9 +348,9 @@ export function WorkfolderDetail({ project }: Props) {
       return;
     }
     setCurrentStatus(newStatus);
-  }
+  }, [project.id]);
 
-  async function openCustomerModal() {
+  const openCustomerModal = useCallback(async () => {
     // Load all customers
     const { data } = await supabase
       .from("customers")
@@ -361,9 +361,9 @@ export function WorkfolderDetail({ project }: Props) {
     setSelectedCustomerId(project.customer_id || "");
     setCustomerSearch("");
     setShowCustomerModal(true);
-  }
+  }, [project.customer_id]);
 
-  async function updateCustomer() {
+  const updateCustomer = useCallback(async () => {
     setSaving(true);
     const { error } = await supabase
       .from("projects")
@@ -379,13 +379,13 @@ export function WorkfolderDetail({ project }: Props) {
     setShowCustomerModal(false);
     setSaving(false);
     loadData();
-  }
+  }, [selectedCustomerId, project.id, loadData]);
 
-  function getStatusDef(key: string | null): WorkfolderStatusDef | undefined {
+  const getStatusDef = useCallback((key: string | null): WorkfolderStatusDef | undefined => {
     return statusOptions.find(s => s.key === key);
-  }
+  }, [statusOptions]);
 
-  function openNewAppointment() {
+  const openNewAppointment = useCallback(() => {
     setEditingAppointment(null);
     setAppointmentForm({
       title: "",
@@ -397,9 +397,9 @@ export function WorkfolderDetail({ project }: Props) {
       subcontractor_ids: [],
     });
     setShowAppointmentModal(true);
-  }
+  }, []);
 
-  function openEditAppointment(apt: Appointment) {
+  const openEditAppointment = useCallback((apt: Appointment) => {
     setEditingAppointment(apt);
     setAppointmentForm({
       title: apt.title,
@@ -411,9 +411,9 @@ export function WorkfolderDetail({ project }: Props) {
       subcontractor_ids: apt.subcontractor_ids || [],
     });
     setShowAppointmentModal(true);
-  }
+  }, []);
 
-  async function saveAppointment(e: React.FormEvent) {
+  const saveAppointment = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
 
@@ -446,9 +446,9 @@ export function WorkfolderDetail({ project }: Props) {
     setShowAppointmentModal(false);
     setEditingAppointment(null);
     loadData();
-  }
+  }, [editingAppointment, appointmentForm, project.id, project.customer_id, loadData]);
 
-  async function updateAppointmentStatus(aptId: string, newStatus: AppointmentStatus) {
+  const updateAppointmentStatus = useCallback(async (aptId: string, newStatus: AppointmentStatus) => {
     const { error } = await supabase
       .from("appointments")
       .update({ status: newStatus })
@@ -459,9 +459,9 @@ export function WorkfolderDetail({ project }: Props) {
       return;
     }
     loadData();
-  }
+  }, [loadData]);
 
-  async function deleteAppointment(aptId: string) {
+  const deleteAppointment = useCallback(async (aptId: string) => {
     if (!confirm("Termin wirklich löschen?")) return;
     
     const { error } = await supabase.from("appointments").delete().eq("id", aptId);
@@ -470,10 +470,10 @@ export function WorkfolderDetail({ project }: Props) {
       return;
     }
     loadData();
-  }
+  }, [loadData]);
 
   // Partner Job functions
-  function openNewJob() {
+  const openNewJob = useCallback(() => {
     setEditingJob(null);
     setJobForm({
       title: "",
@@ -483,9 +483,9 @@ export function WorkfolderDetail({ project }: Props) {
       deadline: "",
     });
     setShowJobModal(true);
-  }
+  }, []);
 
-  function openEditJob(job: any) {
+  const openEditJob = useCallback((job: any) => {
     setEditingJob(job);
     setJobForm({
       title: job.title || "",
@@ -495,9 +495,9 @@ export function WorkfolderDetail({ project }: Props) {
       deadline: job.deadline || "",
     });
     setShowJobModal(true);
-  }
+  }, []);
 
-  async function saveJob(e: React.FormEvent) {
+  const saveJob = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
 
@@ -529,9 +529,9 @@ export function WorkfolderDetail({ project }: Props) {
     setShowJobModal(false);
     setEditingJob(null);
     loadData();
-  }
+  }, [editingJob, jobForm, project.id, loadData]);
 
-  async function deleteJob(jobId: string) {
+  const deleteJob = useCallback(async (jobId: string) => {
     if (!confirm("Job wirklich löschen? Alle zugehörigen Termine werden ebenfalls gelöscht.")) return;
     
     const { error } = await supabase.from("partner_jobs").delete().eq("id", jobId);
@@ -540,16 +540,16 @@ export function WorkfolderDetail({ project }: Props) {
       return;
     }
     loadData();
-  }
+  }, [loadData]);
 
   // Form functions
-  function openFormFill(template: any) {
+  const openFormFill = useCallback((template: any) => {
     setSelectedTemplate(template);
     setFormData({});
     setShowFormModal(true);
-  }
+  }, []);
 
-  async function submitForm(e: React.FormEvent) {
+  const submitForm = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTemplate) return;
     
@@ -577,15 +577,15 @@ export function WorkfolderDetail({ project }: Props) {
     setSelectedTemplate(null);
     setFormData({});
     loadData();
-  }
+  }, [selectedTemplate, project.id, project.customer_id, formData, loadData]);
 
-  async function deleteSubmission(id: string) {
+  const deleteSubmission = useCallback(async (id: string) => {
     if (!confirm("Ausgefülltes Formular wirklich löschen?")) return;
     await supabase.from("form_submissions").delete().eq("id", id);
     loadData();
-  }
+  }, [loadData]);
 
-  async function uploadDocument(e: React.FormEvent<HTMLFormElement>) {
+  const uploadDocument = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.currentTarget;
     const fileInput = form.querySelector('input[type="file"]') as HTMLInputElement;
@@ -630,9 +630,9 @@ export function WorkfolderDetail({ project }: Props) {
     } finally {
       setUploading(false);
     }
-  }
+  }, [project.id, project.customer_id, loadData]);
 
-  async function confirmDeleteDocument() {
+  const confirmDeleteDocument = useCallback(async () => {
     if (!deleteDocTarget) return;
     setDeletingDoc(true);
     
@@ -649,13 +649,71 @@ export function WorkfolderDetail({ project }: Props) {
       setDeletingDoc(false);
       setDeleteDocTarget(null);
     }
-  }
+  }, [deleteDocTarget, loadData]);
 
-  function getCustomerAddress() {
+  const getCustomerAddress = useCallback(() => {
     if (!customer) return null;
     const parts = [customer.street, customer.postal_code, customer.city].filter(Boolean);
     return parts.length > 0 ? parts.join(", ") : null;
-  }
+  }, [customer]);
+
+  // Memoize expensive calculations
+  const nonDoneTasksCount = useMemo(() => tasks.filter(t => t.status !== "done").length, [tasks]);
+
+  const completedAppointmentsCount = useMemo(() =>
+    appointments.filter(a => a.status === "completed").length,
+    [appointments]
+  );
+
+  const nextAppointment = useMemo(() =>
+    appointments.filter(a => a.status !== "completed" && a.status !== "cancelled")[0],
+    [appointments]
+  );
+
+  const uniquePartners = useMemo(() =>
+    partnerJobs
+      .filter((j: any) => j.partner && j.status !== 'open')
+      .map((j: any) => ({ id: j.partner.id, company_name: j.partner.company_name }))
+      .filter((p, idx, arr) => arr.findIndex(x => x.id === p.id) === idx),
+    [partnerJobs]
+  );
+
+  // Memoize filtered images for gallery
+  const galleryImages = useMemo(() =>
+    documents.filter(doc =>
+      doc.mime_type?.startsWith("image/") || doc.document_type === "foto"
+    ),
+    [documents]
+  );
+
+  // Memoize tabs array to avoid recalculation on every render
+  const tabs = useMemo(() => [
+    { id: "overview", label: "Übersicht", icon: FileText },
+    { id: "quotes", label: "Angebote", icon: FileSignature, count: quotes.length },
+    { id: "tasks", label: "Aufgaben", icon: ListTodo, count: nonDoneTasksCount },
+    { id: "appointments", label: "Termine", icon: Calendar, count: appointments.length },
+    { id: "subcontractors", label: "Partner", icon: Building2, count: partnerJobs.length },
+    { id: "documents", label: "Dokumente", icon: FileText, count: documents.length },
+    { id: "gallery", label: "Galerie", icon: ImageIcon },
+    { id: "forms", label: "Formulare", icon: ClipboardList, count: formSubmissions.length },
+  ] as const, [quotes.length, nonDoneTasksCount, appointments.length, partnerJobs.length, documents.length, formSubmissions.length]);
+
+  // Memoize sorted status options
+  const sortedStatusOptions = useMemo(() =>
+    statusOptions.sort((a, b) => a.sort - b.sort),
+    [statusOptions]
+  );
+
+  // Memoize filtered customers for customer modal
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearch) return allCustomers;
+    const search = customerSearch.toLowerCase();
+    return allCustomers.filter(c =>
+      c.last_name?.toLowerCase().includes(search) ||
+      c.first_name?.toLowerCase().includes(search) ||
+      c.company_name?.toLowerCase().includes(search)
+    );
+  }, [allCustomers, customerSearch]);
 
   if (loading) {
     return (
@@ -664,17 +722,6 @@ export function WorkfolderDetail({ project }: Props) {
       </div>
     );
   }
-
-  const tabs = [
-    { id: "overview", label: "Übersicht", icon: FileText },
-    { id: "quotes", label: "Angebote", icon: FileSignature, count: quotes.length },
-    { id: "tasks", label: "Aufgaben", icon: ListTodo, count: tasks.filter(t => t.status !== "done").length },
-    { id: "appointments", label: "Termine", icon: Calendar, count: appointments.length },
-    { id: "subcontractors", label: "Partner", icon: Building2, count: partnerJobs.length },
-    { id: "documents", label: "Dokumente", icon: FileText, count: documents.length },
-    { id: "gallery", label: "Galerie", icon: ImageIcon },
-    { id: "forms", label: "Formulare", icon: ClipboardList, count: formSubmissions.length },
-  ] as const;
 
   return (
     <div className="space-y-4">
@@ -704,7 +751,7 @@ export function WorkfolderDetail({ project }: Props) {
                     : "bg-neutral-700 text-neutral-300"
                 }`}
               >
-                {statusOptions.sort((a, b) => a.sort - b.sort).map((s) => (
+                {sortedStatusOptions.map((s) => (
                   <option key={s.key} value={s.key}>
                     {s.label}
                   </option>
@@ -898,7 +945,7 @@ export function WorkfolderDetail({ project }: Props) {
                 <div className="flex justify-between">
                   <span className="text-neutral-400">Abgeschlossen</span>
                   <span className="text-green-400">
-                    {appointments.filter(a => a.status === "completed").length}
+                    {completedAppointmentsCount}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -915,13 +962,13 @@ export function WorkfolderDetail({ project }: Props) {
             {/* Next Appointment */}
             <div className="card p-4">
               <h3 className="font-semibold text-white mb-3">Nächster Termin</h3>
-              {appointments.filter(a => a.status !== "completed" && a.status !== "cancelled")[0] ? (
+              {nextAppointment ? (
                 <div>
                   <p className="font-medium text-white">
-                    {appointments.filter(a => a.status !== "completed")[0].title}
+                    {nextAppointment.title}
                   </p>
                   <p className="text-sm text-neutral-400 mt-1">
-                    {new Date(appointments.filter(a => a.status !== "completed")[0].start_time).toLocaleString("de-DE")}
+                    {new Date(nextAppointment.start_time).toLocaleString("de-DE")}
                   </p>
                 </div>
               ) : (
@@ -943,17 +990,11 @@ export function WorkfolderDetail({ project }: Props) {
 
         {/* Tasks */}
         {activeTab === "tasks" && (
-          <TasksTab 
+          <TasksTab
             tasks={tasks}
             projectId={project.id}
             users={allUsers}
-            partners={
-              // Extrahiere unique Partner aus angenommenen Jobs
-              partnerJobs
-                .filter((j: any) => j.partner && j.status !== 'open')
-                .map((j: any) => ({ id: j.partner.id, company_name: j.partner.company_name }))
-                .filter((p, idx, arr) => arr.findIndex(x => x.id === p.id) === idx)
-            }
+            partners={uniquePartners}
             onRefresh={loadData}
           />
         )}
@@ -1324,10 +1365,8 @@ export function WorkfolderDetail({ project }: Props) {
 
         {/* Gallery */}
         {activeTab === "gallery" && (() => {
-          const images = documents.filter(doc => 
-            doc.mime_type?.startsWith("image/") || doc.document_type === "foto"
-          );
-          
+          const images = galleryImages;
+
           return (
             <div>
               <div className="flex justify-between items-center mb-4">
@@ -1913,14 +1952,7 @@ export function WorkfolderDetail({ project }: Props) {
             >
               <span className="italic">Kein Kunde</span>
             </button>
-            {allCustomers
-              .filter(c => 
-                !customerSearch ||
-                c.last_name?.toLowerCase().includes(customerSearch.toLowerCase()) ||
-                c.company_name?.toLowerCase().includes(customerSearch.toLowerCase()) ||
-                c.first_name?.toLowerCase().includes(customerSearch.toLowerCase())
-              )
-              .map((c) => (
+            {filteredCustomers.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => setSelectedCustomerId(c.id)}
