@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { Spinner } from "@/components/ui/spinner";
 import { Modal } from "@/components/ui/modal";
@@ -1352,9 +1353,11 @@ export function WorkfolderDetail({ project }: Props) {
                         onClick={() => setLightboxIndex(idx)}
                         className="block w-full aspect-square rounded-lg overflow-hidden bg-neutral-800 hover:ring-2 hover:ring-orange-500 transition-all"
                       >
-                        <img
+                        <Image
                           src={img.storage_url || ""}
                           alt={img.name}
+                          width={400}
+                          height={400}
                           className="w-full h-full object-cover"
                         />
                       </button>
@@ -1419,9 +1422,11 @@ export function WorkfolderDetail({ project }: Props) {
                   )}
 
                   {/* Image */}
-                  <img
+                  <Image
                     src={images[lightboxIndex].storage_url || ""}
                     alt={images[lightboxIndex].name}
+                    width={1920}
+                    height={1080}
                     className="max-h-[85vh] max-w-[90vw] object-contain"
                     onClick={(e) => e.stopPropagation()}
                   />
@@ -1848,9 +1853,11 @@ export function WorkfolderDetail({ project }: Props) {
           <div className="flex-1 overflow-hidden p-4" onClick={(e) => e.stopPropagation()}>
             {previewDoc.mime_type?.startsWith("image/") ? (
               <div className="h-full flex items-center justify-center">
-                <img
+                <Image
                   src={previewDoc.storage_url || ""}
                   alt={previewDoc.name}
+                  width={1920}
+                  height={1080}
                   className="max-h-full max-w-full object-contain"
                 />
               </div>
@@ -2180,9 +2187,11 @@ export function WorkfolderDetail({ project }: Props) {
                       }}
                     />
                     {formData[field.id] && (
-                      <img 
-                        src={formData[field.id]} 
-                        alt="Foto" 
+                      <Image
+                        src={formData[field.id]}
+                        alt="Foto"
+                        width={400}
+                        height={300}
                         className="max-h-32 rounded border border-neutral-700"
                       />
                     )}
@@ -2231,7 +2240,7 @@ export function WorkfolderDetail({ project }: Props) {
                   <div className="text-sm text-neutral-400">{field?.label || fieldId}</div>
                   <div className="text-white mt-1">
                     {isImage ? (
-                      <img src={value as string} alt={field?.label || "Bild"} className="max-h-40 rounded border border-neutral-700 bg-white" />
+                      <Image src={value as string} alt={field?.label || "Bild"} width={400} height={300} className="max-h-40 rounded border border-neutral-700 bg-white" />
                     ) : typeof value === "boolean" ? (
                       value ? "Ja" : "Nein"
                     ) : (
