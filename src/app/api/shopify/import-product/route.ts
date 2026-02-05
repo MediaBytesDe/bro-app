@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import type { ShopifyProductResponse, ShopifyProduct } from "@/types/shopify";
 
 export async function POST(request: NextRequest) {
   try {
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const shopifyData = await shopifyResponse.json();
+    const shopifyData: ShopifyProductResponse = await shopifyResponse.json();
     const product = shopifyData.product;
 
     if (!product) {
@@ -104,7 +105,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function mapShopifyProduct(shopifyProduct: any, sourceUrl: string) {
+function mapShopifyProduct(shopifyProduct: ShopifyProduct, sourceUrl: string) {
   // Get first variant (usually the base variant)
   const firstVariant = shopifyProduct.variants?.[0];
   const sku = firstVariant?.sku || shopifyProduct.id.toString();
