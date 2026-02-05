@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Modal } from "@/components/ui/modal";
 import { Spinner } from "@/components/ui/spinner";
 import { getTradeOptions, getTradeLabel, loadTradesFromDB } from "@/lib/trades";
+import Image from "next/image";
 import {
   Wrench,
   Plus,
@@ -282,7 +283,14 @@ export default function SubcontractorsPage() {
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-3">
                       {partner.logo_url ? (
-                        <img src={partner.logo_url} alt="" className="w-8 h-8 rounded object-contain bg-white p-0.5" />
+                        <Image
+                          src={partner.logo_url}
+                          alt={`${partner.company_name} Logo`}
+                          width={32}
+                          height={32}
+                          className="w-8 h-8 rounded object-contain bg-white p-0.5"
+                          loading="lazy"
+                        />
                       ) : (
                         <div className="w-8 h-8 rounded bg-[#1a1a1a] flex items-center justify-center">
                           <Building2 className="w-4 h-4 text-neutral-500" />

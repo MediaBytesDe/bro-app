@@ -5,6 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Spinner } from "@/components/ui/spinner";
 import Link from "next/link";
+import Image from "next/image";
 import SignatureCanvas from "react-signature-canvas";
 import { 
   ArrowLeft,
@@ -443,7 +444,14 @@ export default function RapportPage() {
                 <div className="grid grid-cols-4 md:grid-cols-6 gap-2 mb-3">
                   {entryForm.photos.map((photo, index) => (
                     <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-[#111]">
-                      <img src={photo.url} alt="" className="w-full h-full object-cover" />
+                      <Image
+                        src={photo.url}
+                        alt={photo.caption || "Rapport Foto"}
+                        width={400}
+                        height={400}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
                       <button
                         onClick={() => removePhoto(index)}
                         className="absolute top-1 right-1 p-1 bg-black/60 rounded-full text-white hover:bg-black/80"
@@ -558,7 +566,14 @@ export default function RapportPage() {
                       rel="noopener noreferrer"
                       className="aspect-square rounded-lg overflow-hidden bg-[#111] hover:opacity-80 transition-opacity"
                     >
-                      <img src={photo.url} alt="" className="w-full h-full object-cover" />
+                      <Image
+                        src={photo.url}
+                        alt={photo.caption || "Rapport Foto"}
+                        width={400}
+                        height={400}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
                     </a>
                   ))}
                 </div>
@@ -592,7 +607,14 @@ export default function RapportPage() {
               <label className="block text-sm text-neutral-400 mb-2">Unterschrift</label>
               {signatureData ? (
                 <div className="border border-[#333] rounded-lg p-4 bg-white max-w-md">
-                  <img src={signatureData} alt="Unterschrift" className="max-h-32 mx-auto" />
+                  <Image
+                    src={signatureData}
+                    alt="Unterschrift"
+                    width={400}
+                    height={128}
+                    className="max-h-32 mx-auto"
+                    loading="lazy"
+                  />
                   <button
                     onClick={() => setSignatureData(null)}
                     className="mt-3 text-sm text-red-400 hover:text-red-300 flex items-center gap-1 mx-auto"
