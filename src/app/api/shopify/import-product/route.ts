@@ -121,7 +121,14 @@ async function mapShopifyProduct(shopifyProduct: ShopifyProduct, sourceUrl: stri
   const mainImage = shopifyProduct.images?.[0]?.src || shopifyProduct.image?.src || null;
 
   // Determine category from tags
-  const tags = shopifyProduct.tags || [];
+  // Shopify tags can be either an array or a comma-separated string
+  const rawTags = shopifyProduct.tags || [];
+  const tags = Array.isArray(rawTags)
+    ? rawTags
+    : typeof rawTags === 'string'
+      ? rawTags.split(',').map(t => t.trim())
+      : [];
+
   let categoryName = "Zubehör"; // Default
   if (tags.includes("Solarmodule")) categoryName = "Trina Solar";
   else if (tags.some((t: string) => t.toLowerCase().includes("wechselrichter"))) categoryName = "Wechselrichter";
