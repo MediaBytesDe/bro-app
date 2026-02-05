@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   Home, Users, Brain, FileText, LogOut, Building2,
-  FileSignature, Calendar, Wrench, FolderOpen, Cpu,
+  FileSignature, Calendar, Wrench, FolderOpen, Cpu, Bot,
   ClipboardList, MoreHorizontal, X, Package, ChevronDown,
   UserCircle, ShoppingCart, Briefcase, Settings, MessageSquare, Download, Database
 } from "lucide-react";
@@ -29,7 +29,7 @@ const allTabs = [
   { id: "documents", path: "/documents", label: "Dokumente", icon: FolderOpen },
   { id: "skills", path: "/skills", label: "Skills", icon: Brain },
   { id: "logs", path: "/logs", label: "Logs", icon: FileText },
-  { id: "openclaw", path: "/openclaw", label: "OpenClaw", icon: Cpu },
+  { id: "openclaw", path: "/openclaw", label: "OpenClaw", icon: Bot },
 ];
 
 // Desktop Navigation mit Dropdown-Gruppen
@@ -83,7 +83,7 @@ const desktopNav: NavItem[] = [
     children: [
       { id: "skills", path: "/skills", label: "Skills", icon: Brain, description: "Bro Fähigkeiten" },
       { id: "logs", path: "/logs", label: "Logs", icon: FileText, description: "Aktivitätsprotokoll" },
-      { id: "openclaw", path: "/openclaw", label: "OpenClaw", icon: Cpu, description: "AI-Steuerung & Cron" },
+      { id: "openclaw", path: "/openclaw", label: "OpenClaw", icon: Bot, description: "KI-Assistenten" },
     ]
   },
 ];
