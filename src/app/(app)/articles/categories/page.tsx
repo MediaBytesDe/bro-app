@@ -85,14 +85,26 @@ export default function CategoriesPage() {
 
   const tree = buildTree(null);
 
-  // Render category options recursively for select dropdown
+  // Render category options recursively for select dropdown with clear hierarchy
   const renderCategoryOptions = (nodes: CategoryNode[], level: number): JSX.Element[] => {
-    return nodes.flatMap(node => [
-      <option key={node.id} value={node.id}>
-        {'  '.repeat(level)}↳ {node.name}
-      </option>,
-      ...renderCategoryOptions(node.children, level + 1)
-    ]);
+    return nodes.flatMap(node => {
+      // Use different prefixes based on level for clarity
+      let prefix = '';
+      if (level === 0) {
+        prefix = '📁 '; // Main categories
+      } else if (level === 1) {
+        prefix = '  └─ '; // First sub-level
+      } else {
+        prefix = '    ' + '  '.repeat(level - 1) + '└─ '; // Deeper levels
+      }
+
+      return [
+        <option key={node.id} value={node.id}>
+          {prefix}{node.name}
+        </option>,
+        ...renderCategoryOptions(node.children, level + 1)
+      ];
+    });
   };
 
   const toggleExpand = (id: string) => {
