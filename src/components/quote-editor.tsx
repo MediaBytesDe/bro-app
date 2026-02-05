@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
@@ -10,32 +10,26 @@ import {
   ArrowLeft,
   Plus,
   Trash2,
-  Search,
-  Package,
-  Save,
   ChevronDown,
   X,
-  Building2,
   FileStack,
-  Calendar,
-  AlertCircle,
-  CheckCircle,
-  GripVertical,
-  Pencil,
   Send,
   FileText,
   ExternalLink,
+  Save,
 } from "lucide-react";
 import type { Product } from "@/types/wawi";
 import {
   WawiQuoteItem,
   QuoteTemplateItem,
-  PRODUCT_CATEGORIES,
   formatCurrency,
   formatNumber,
   roundToX99,
   calculateItemTotal,
 } from "@/types/wawi";
+import { ProductSelector } from "@/components/quote-editor/product-selector";
+import { QuoteItemsList } from "@/components/quote-editor/quote-items-list";
+import { QuoteSummary } from "@/components/quote-editor/quote-summary";
 
 // Standard Schlussbemerkung mit dynamischem Absender
 const getDefaultFooter = (senderName: string) => `Wir hoffen, dass unser Angebot Sie überzeugt und freuen uns auf Ihre Rückmeldung. Bei Fragen stehen wir Ihnen gerne telefonisch zur Verfügung.
@@ -103,25 +97,20 @@ export function QuoteEditor({ quoteId, templateId, initialProjectId, initialCust
   // Products Modal
   const [showProducts, setShowProducts] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
-  const [productSearch, setProductSearch] = useState("");
-  const [productCategory, setProductCategory] = useState<string | null>(null);
-  
+
   // Templates Modal
   const [showTemplates, setShowTemplates] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
-  
+
   // Customers & Projects
   const [customers, setCustomers] = useState<any[]>([]);
   const [showCustomers, setShowCustomers] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
-  
+
   // Edit Item Modal
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
   const [editingPackage, setEditingPackage] = useState(false);
   const [packageDescription, setPackageDescription] = useState("");
-  
-  // Drag & Drop
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const router = useRouter();
   const supabase = createClient();
@@ -451,23 +440,52 @@ vielen Dank für Ihr Interesse an unseren Produkten. Gerne unterbreite ich Ihnen
     setItems(updated);
   }
 
-  // Calculate Totals
-  const subtotal = items.reduce((sum, item) => sum + item.total_price, 0);
-  const discountAmount = subtotal * (globalDiscount / 100);
-  const afterDiscount = subtotal - discountAmount;
-  const taxAmount = items.reduce((sum, item) => sum + item.tax_amount, 0) * (1 - globalDiscount / 100);
-  
-  // Package Deal: Aufrunden auf X.X99€
-  const packagePrice = isPackageDeal ? roundToX99(afterDiscount) : afterDiscount;
-  const packageSurcharge = packagePrice - afterDiscount; // Zuschlag (99-Endung)
-  
-  const total = (isPackageDeal ? packagePrice : afterDiscount) + taxAmount;
-  const totalPurchase = items.reduce((sum, item) => sum + (item.purchase_price * item.quantity), 0);
-  const profit = (isPackageDeal ? packagePrice : afterDiscount) - totalPurchase;
-  // Marge = Gewinn / Verkaufspreis (echter Gewinnanteil am Umsatz)
-  const effectiveSalesPrice = isPackageDeal ? packagePrice : afterDiscount;
-  const profitPercentage = effectiveSalesPrice > 0 ? (profit / effectiveSalesPrice) * 100 : 0;
-  const isRentable = profitPercentage >= 15; // 15% Mindestmarge
+  // Calculate Totals - Memoized
+  const calculations = useMemo(() => {
+    const subtotal = items.reduce((sum, item) => sum + item.total_price, 0);
+    const discountAmount = subtotal * (globalDiscount / 100);
+    const afterDiscount = subtotal - discountAmount;
+    const taxAmount = items.reduce((sum, item) => sum + item.tax_amount, 0) * (1 - globalDiscount / 100);
+
+    // Package Deal: Aufrunden auf X.X99€
+    const packagePrice = isPackageDeal ? roundToX99(afterDiscount) : afterDiscount;
+    const packageSurcharge = packagePrice - afterDiscount; // Zuschlag (99-Endung)
+
+    const total = (isPackageDeal ? packagePrice : afterDiscount) + taxAmount;
+    const totalPurchase = items.reduce((sum, item) => sum + (item.purchase_price * item.quantity), 0);
+    const profit = (isPackageDeal ? packagePrice : afterDiscount) - totalPurchase;
+    // Marge = Gewinn / Verkaufspreis (echter Gewinnanteil am Umsatz)
+    const effectiveSalesPrice = isPackageDeal ? packagePrice : afterDiscount;
+    const profitPercentage = effectiveSalesPrice > 0 ? (profit / effectiveSalesPrice) * 100 : 0;
+    const isRentable = profitPercentage >= 15; // 15% Mindestmarge
+
+    return {
+      subtotal,
+      discountAmount,
+      afterDiscount,
+      taxAmount,
+      packagePrice,
+      packageSurcharge,
+      total,
+      totalPurchase,
+      profit,
+      profitPercentage,
+      isRentable,
+    };
+  }, [items, globalDiscount, isPackageDeal]);
+
+  const {
+    subtotal,
+    discountAmount,
+    afterDiscount,
+    taxAmount,
+    packagePrice,
+    packageSurcharge,
+    total,
+    profit,
+    profitPercentage,
+    isRentable,
+  } = calculations;
 
   // Save Quote
   async function saveQuote() {
@@ -815,171 +833,21 @@ vielen Dank für Ihr Interesse an unseren Produkten. Gerne unterbreite ich Ihnen
         </div>
       </div>
 
-      {/* Positions Table - Compact */}
-      <section className="bg-[#111] border border-[#1a1a1a] rounded-2xl overflow-hidden">
-        {/* Table Header */}
-        <div className="grid grid-cols-[24px_32px_1fr_80px_100px_80px_100px_80px_32px] gap-1 px-3 py-2 bg-[#0d0d0d] border-b border-[#1a1a1a] text-[10px] font-semibold text-neutral-500 uppercase">
-          <div></div>
-          <div>Pos.</div>
-          <div>Produkt</div>
-          <div className="text-center">Menge</div>
-          <div className="text-right">Einzelpreis</div>
-          <div className="text-center">Rabatt</div>
-          <div className="text-right">Gesamt</div>
-          <div className="text-right">Marge</div>
-          <div></div>
-        </div>
-
-        {/* Items */}
-        {items.length === 0 && !isPackageDeal ? (
-          <div className="p-12 text-center">
-            <Package className="w-12 h-12 mx-auto mb-3 text-neutral-600" />
-            <p className="text-neutral-500 mb-4">Keine Positionen hinzugefügt</p>
-            <button onClick={() => setShowProducts(true)} className="btn btn-primary">
-              Produkte hinzufügen
-            </button>
-          </div>
-        ) : (
-          <div className="divide-y divide-[#1a1a1a]">
-            {/* Komplettpaket Position */}
-            {isPackageDeal && (
-              <div 
-                className="grid grid-cols-[24px_32px_1fr_80px_100px_80px_100px_80px_32px] gap-1 px-3 py-2 items-center bg-[#fa432a]/10 cursor-pointer hover:bg-[#fa432a]/15"
-                onClick={() => setEditingPackage(true)}
-              >
-                <div></div>
-                <div className="text-[#fa432a] font-mono text-xs font-bold">1</div>
-                <div className="min-w-0">
-                  <div className="text-white text-sm font-medium truncate">{packageTitle || "Photovoltaik-Komplettpaket"}</div>
-                  <div className="text-[10px] text-[#fa432a] truncate">Komplettpaket{packageDescription ? ` · ${packageDescription}` : ""}</div>
-                </div>
-                <div className="text-center text-xs text-neutral-400">1 Paket</div>
-                <div className="text-right text-xs text-white">{formatCurrency(packagePrice)}</div>
-                <div className="text-center text-neutral-600 text-xs">—</div>
-                <div className="text-right text-sm font-bold text-white">{formatCurrency(packagePrice)}</div>
-                <div className="text-right text-xs text-green-400">{formatNumber(profitPercentage, 1)}%</div>
-                <div className="flex justify-center">
-                  <Pencil className="w-3 h-3 text-neutral-500" />
-                </div>
-              </div>
-            )}
-            
-            {/* Regular Items with Drag & Drop */}
-            {items.map((item, index) => (
-              <div 
-                key={item._id || index}
-                draggable
-                onDragStart={() => setDragIndex(index)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => {
-                  if (dragIndex !== null && dragIndex !== index) {
-                    const newItems = [...items];
-                    const [draggedItem] = newItems.splice(dragIndex, 1);
-                    newItems.splice(index, 0, draggedItem);
-                    // Update position numbers
-                    newItems.forEach((item, i) => item.position_number = i + 1);
-                    setItems(newItems);
-                  }
-                  setDragIndex(null);
-                }}
-                onDragEnd={() => setDragIndex(null)}
-                className={`grid grid-cols-[24px_32px_1fr_80px_100px_80px_100px_80px_32px] gap-1 px-3 py-2 items-center hover:bg-[#0d0d0d] transition-colors ${
-                  dragIndex === index ? "opacity-50 bg-[#1a1a1a]" : ""
-                }`}
-              >
-                {/* Drag Handle */}
-                <div className="cursor-grab active:cursor-grabbing text-neutral-600 hover:text-neutral-400">
-                  <GripVertical className="w-4 h-4" />
-                </div>
-                
-                {/* Position */}
-                <div className="text-neutral-500 font-mono text-xs">{isPackageDeal ? index + 2 : index + 1}</div>
-                
-                {/* Product Name - clickable for edit */}
-                <div 
-                  className="min-w-0 cursor-pointer hover:bg-[#1a1a1a] rounded px-1 py-0.5 -mx-1"
-                  onClick={() => setEditingItemIndex(index)}
-                >
-                  <div className="text-white text-sm truncate">{item.product_name}</div>
-                  {(item.product_description || item.sku) && (
-                    <div className="text-[10px] text-neutral-500 truncate">
-                      {item.product_description || item.sku}
-                    </div>
-                  )}
-                </div>
-                
-                {/* Quantity */}
-                <div className="flex items-center justify-center gap-0.5">
-                  <input
-                    type="number"
-                    className="w-12 bg-transparent border border-transparent hover:border-[#333] focus:border-[#fa432a] rounded text-center text-xs text-white py-1 focus:outline-none"
-                    value={item.quantity}
-                    onChange={(e) => updateItem(index, "quantity", parseFloat(e.target.value) || 0)}
-                    min="0"
-                    step="0.01"
-                  />
-                  <span className="text-[10px] text-neutral-600">{item.unit}</span>
-                </div>
-                
-                {/* Unit Price */}
-                <div>
-                  <input
-                    type="number"
-                    className="w-full bg-transparent border border-transparent hover:border-[#333] focus:border-[#fa432a] rounded text-right text-xs text-white py-1 px-1 focus:outline-none"
-                    value={item.unit_price}
-                    onChange={(e) => updateItem(index, "unit_price", parseFloat(e.target.value) || 0)}
-                    min="0"
-                    step="0.01"
-                  />
-                </div>
-                
-                {/* Discount */}
-                <div>
-                  <input
-                    type="number"
-                    className="w-full bg-transparent border border-transparent hover:border-[#333] focus:border-[#fa432a] rounded text-center text-xs text-neutral-400 py-1 focus:outline-none"
-                    value={item.discount_percentage}
-                    onChange={(e) => updateItem(index, "discount_percentage", parseFloat(e.target.value) || 0)}
-                    min="0"
-                    max="100"
-                    step="0.5"
-                  />
-                </div>
-                
-                {/* Total */}
-                <div className="text-right text-sm font-semibold text-white">
-                  {formatCurrency(item.total_price)}
-                </div>
-                
-                {/* Margin */}
-                <div className={`text-right text-xs ${item.margin_percentage >= 15 ? "text-green-400" : "text-orange-400"}`}>
-                  {formatNumber(item.margin_percentage, 1)}%
-                  <div className="text-[9px] text-neutral-600">{formatCurrency(item.margin_amount)}</div>
-                </div>
-                
-                {/* Delete */}
-                <div className="flex justify-center">
-                  <button
-                    onClick={() => removeItem(index)}
-                    className="w-6 h-6 flex items-center justify-center text-neutral-600 hover:text-red-400 transition-colors"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-            ))}
-            
-            {/* Add Position Button */}
-            <button
-              onClick={() => setShowProducts(true)}
-              className="w-full py-2 text-xs text-neutral-500 hover:text-white hover:bg-[#1a1a1a] transition-colors flex items-center justify-center gap-1"
-            >
-              <Plus className="w-3 h-3" />
-              Position hinzufügen
-            </button>
-          </div>
-        )}
-      </section>
+      {/* Positions Table - Extracted Component */}
+      <QuoteItemsList
+        items={items}
+        isPackageDeal={isPackageDeal}
+        packageTitle={packageTitle}
+        packageDescription={packageDescription}
+        packagePrice={packagePrice}
+        profitPercentage={profitPercentage}
+        onUpdateItem={updateItem}
+        onRemoveItem={removeItem}
+        onReorderItems={setItems}
+        onEditItem={(index) => setEditingItemIndex(index)}
+        onEditPackage={() => setEditingPackage(true)}
+        onAddProduct={() => setShowProducts(true)}
+      />
       
       {/* Edit Item Modal */}
       <Modal open={editingItemIndex !== null} onClose={() => setEditingItemIndex(null)} title="Position bearbeiten">
@@ -1071,84 +939,21 @@ vielen Dank für Ihr Interesse an unseren Produkten. Gerne unterbreite ich Ihnen
         </div>
       </Modal>
 
-      {/* Summary */}
-      <section className="bg-[#111] border border-[#1a1a1a] rounded-2xl p-5">
-        <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-          <span className="w-6 h-6 rounded bg-[#1a1a1a] flex items-center justify-center text-xs">Σ</span>
-          Zusammenfassung
-        </h3>
-        
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between text-neutral-400">
-            <span>Zwischensumme:</span>
-            <span>{formatCurrency(subtotal)}</span>
-          </div>
-          <div className="flex justify-between text-neutral-400">
-            <span>Rabatt:</span>
-            <span>-{formatCurrency(discountAmount)}</span>
-          </div>
-          <div className="flex justify-between text-neutral-400">
-            <span>Nach Rabatt:</span>
-            <span>{formatCurrency(afterDiscount)}</span>
-          </div>
-          {isPackageDeal && packageSurcharge > 0 && (
-            <div className="flex justify-between text-orange-400 font-medium">
-              <span>Zuschlag (99-Endung):</span>
-              <span>+{formatCurrency(packageSurcharge)}</span>
-            </div>
-          )}
-          <div className="flex justify-between text-neutral-400">
-            <span>Mehrwertsteuer:</span>
-            <span>{formatCurrency(taxAmount)}</span>
-          </div>
-          
-          <div className="border-t border-[#262626] pt-3 mt-3">
-            <div className="flex justify-between text-lg font-bold">
-              <span className="text-white">Gesamt:</span>
-              <span className="text-white">{formatCurrency(total)}</span>
-            </div>
-          </div>
-
-          <div className="border-t border-[#262626] pt-3 mt-3">
-            <div className="flex justify-between items-center">
-              <span className="text-white font-semibold">Gewinn:</span>
-              <div className="text-right">
-                <span className={`text-lg font-bold ${isRentable ? "text-green-400" : "text-red-400"}`}>
-                  {formatCurrency(profit)} ({formatNumber(profitPercentage, 1)}%)
-                </span>
-                <div className="flex items-center gap-1 justify-end mt-1">
-                  {isRentable ? (
-                    <>
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-xs text-green-400">Rentabel</span>
-                    </>
-                  ) : (
-                    <>
-                      <AlertCircle className="w-4 h-4 text-red-400" />
-                      <span className="text-xs text-red-400">Nicht rentabel</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Global Discount Input */}
-          <div className="inline-flex items-center gap-2 pt-4 border-t border-[#262626] mt-4">
-            <span className="text-neutral-400 text-sm">Globaler Rabatt:</span>
-            <input
-              type="number"
-              className="w-16 bg-[#1a1a1a] border border-[#262626] rounded-lg text-center text-white py-1.5 px-2 focus:border-[#fa432a] focus:outline-none"
-              value={globalDiscount}
-              onChange={(e) => setGlobalDiscount(parseFloat(e.target.value) || 0)}
-              min="0"
-              max="100"
-              step="0.5"
-            />
-            <span className="text-neutral-400 text-sm">%</span>
-          </div>
-        </div>
-      </section>
+      {/* Summary - Extracted Component */}
+      <QuoteSummary
+        subtotal={subtotal}
+        discountAmount={discountAmount}
+        afterDiscount={afterDiscount}
+        isPackageDeal={isPackageDeal}
+        packageSurcharge={packageSurcharge}
+        taxAmount={taxAmount}
+        total={total}
+        profit={profit}
+        profitPercentage={profitPercentage}
+        isRentable={isRentable}
+        globalDiscount={globalDiscount}
+        onGlobalDiscountChange={setGlobalDiscount}
+      />
 
       {/* Texts */}
       <section className="space-y-4">
@@ -1237,65 +1042,14 @@ vielen Dank für Ihr Interesse an unseren Produkten. Gerne unterbreite ich Ihnen
         </div>
       </div>
 
-      {/* Products Modal */}
-      <Modal open={showProducts} onClose={() => setShowProducts(false)} title="Produkt hinzufügen">
-        <div className="space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
-            <input
-              type="text"
-              placeholder="Suchen..."
-              className="input pl-10"
-              value={productSearch}
-              onChange={(e) => setProductSearch(e.target.value)}
-            />
-          </div>
-
-          <select
-            className="input"
-            value={productCategory || ""}
-            onChange={(e) => setProductCategory(e.target.value || null)}
-          >
-            <option value="">Alle Kategorien</option>
-            {PRODUCT_CATEGORIES.map((cat) => (
-              <option key={cat.id} value={cat.id}>{cat.label}</option>
-            ))}
-          </select>
-
-          <div className="max-h-[50vh] overflow-y-auto space-y-2">
-            {products
-              .filter((p) => {
-                const matchesSearch = !productSearch || 
-                  p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-                  p.sku.toLowerCase().includes(productSearch.toLowerCase());
-                const matchesCat = !productCategory || p.category === productCategory;
-                return matchesSearch && matchesCat;
-              })
-              .map((product) => (
-                <button
-                  key={product.id}
-                  onClick={() => addProduct(product)}
-                  className="w-full p-3 bg-[#0d0d0d] border border-[#1a1a1a] rounded-xl text-left hover:border-[#333] transition-colors"
-                >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-medium text-white truncate">{product.name}</h4>
-                      <p className="text-xs text-neutral-500">{product.sku}</p>
-                    </div>
-                    <span className="text-sm font-semibold text-orange-400">
-                      {formatCurrency(product.net_selling_price)}
-                    </span>
-                  </div>
-                </button>
-              ))}
-          </div>
-          
-          <button onClick={addCustomItem} className="btn btn-ghost w-full">
-            <Plus className="w-4 h-4" />
-            Manuelle Position
-          </button>
-        </div>
-      </Modal>
+      {/* Products Modal - Extracted Component */}
+      <ProductSelector
+        open={showProducts}
+        onClose={() => setShowProducts(false)}
+        products={products}
+        onAddProduct={addProduct}
+        onAddCustomItem={addCustomItem}
+      />
 
       {/* Customers Modal */}
       <Modal open={showCustomers} onClose={() => setShowCustomers(false)} title="Kunde auswählen">
