@@ -92,8 +92,8 @@ export function generateQuotePDF(data: QuotePDFData): jsPDF {
       doc.text(customer.street, 20, y);
       y += 6;
     }
-    if (customer.zip || customer.city) {
-      doc.text(`${customer.zip || ""} ${customer.city || ""}`.trim(), 20, y);
+    if (customer.postal_code || customer.city) {
+      doc.text(`${customer.postal_code || ""} ${customer.city || ""}`.trim(), 20, y);
       y += 6;
     }
   } else {

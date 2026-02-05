@@ -3,6 +3,15 @@ import { createClient } from '@/lib/supabase/server';
 import { generateQuotePDF } from '@/lib/pdf/quote-pdf';
 import type { Quote, QuoteLineItem, Customer } from '@/types/database';
 
+// Extended Quote type with additional PDF-specific fields
+interface QuoteWithPDFFields extends Quote {
+  payment_terms: string | null;
+  introduction: string | null;
+  total_net: number | null;
+  total_tax: number | null;
+  total_gross: number | null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Auth check
@@ -12,6 +21,15 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Check user role and permissions
+    const { data: profile } = await supabase
+      .from("users")
+      .select("role")
+      .eq("auth_id", user.id)
+      .single();
+
+    const isStaff = profile?.role && ["admin", "mitarbeiter", "superadmin"].includes(profile.role);
 
     const { quoteId } = await request.json();
 
@@ -28,6 +46,20 @@ export async function POST(request: NextRequest) {
 
     if (quoteError || !wawiQuote) {
       return NextResponse.json({ error: 'Quote not found' }, { status: 404 });
+    }
+
+    // For non-staff users, verify they own the quote
+    if (!isStaff) {
+      // Verify quote belongs to user's customer record
+      const { data: customer } = await supabase
+        .from("customers")
+        .select("id")
+        .eq("auth_user_id", user.id)
+        .single();
+
+      if (!customer || wawiQuote.customer_id !== customer.id) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
     }
 
     // Fetch customer data
@@ -49,7 +81,7 @@ export async function POST(request: NextRequest) {
       .order('position_number', { ascending: true });
 
     // Transform wawi_quotes data to match Quote type expected by PDF generator
-    const quote: Quote = {
+    const quote: QuoteWithPDFFields = {
       id: wawiQuote.id,
       customer_id: wawiQuote.customer_id || '',
       project_id: wawiQuote.project_id,
@@ -69,6 +101,7 @@ export async function POST(request: NextRequest) {
       discount_percent: wawiQuote.discount_percentage,
       discount_amount: wawiQuote.discount_amount,
       line_items: (items || []).map((item): QuoteLineItem => ({
+        id: item.id,
         position: item.position_number,
         description: item.product_description || item.product_name,
         quantity: item.quantity,
