@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Spinner } from "@/components/ui/spinner";
 import { Modal } from "@/components/ui/modal";
+import { PDFViewer } from "@/components/pdf-viewer";
 import {
   FileSignature,
   Plus,
@@ -20,10 +21,10 @@ import {
   Trash2,
   FileText,
 } from "lucide-react";
-import { 
-  WawiQuote, 
-  QUOTE_STATUSES, 
-  formatCurrency 
+import {
+  WawiQuote,
+  QUOTE_STATUSES,
+  formatCurrency
 } from "@/types/wawi";
 
 const statusColors: Record<string, { bg: string; text: string }> = {
@@ -45,6 +46,8 @@ export function QuotesList() {
   const [deleteTarget, setDeleteTarget] = useState<WawiQuote | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [rejectedCollapsed, setRejectedCollapsed] = useState(true);
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
   const router = useRouter();
   const supabase = createClient();
@@ -110,6 +113,16 @@ export function QuotesList() {
       .update({ status, updated_at: new Date().toISOString() })
       .eq("id", id);
     loadQuotes();
+  }
+
+  function openPdfModal(lexwareId: string) {
+    setPdfUrl(`/api/lexware/quote-pdf?lexwareId=${lexwareId}`);
+    setPdfModalOpen(true);
+  }
+
+  function closePdfModal() {
+    setPdfModalOpen(false);
+    setPdfUrl(null);
   }
 
   function getCustomerName(quote: WawiQuote): string {
@@ -252,13 +265,14 @@ export function QuotesList() {
                 {!isCollapsed && (
                   <div className="space-y-1">
                     {groupQuotes.map((quote, i) => (
-                      <QuoteCard 
-                        key={quote.id} 
-                        quote={quote} 
+                      <QuoteCard
+                        key={quote.id}
+                        quote={quote}
                         index={i}
                         onClick={() => router.push(`/quotes/${quote.id}`)}
                         onDelete={quote.status === "draft" ? () => setDeleteTarget(quote) : undefined}
                         onStatusChange={(status) => updateStatus(quote.id, status)}
+                        onOpenPdf={openPdfModal}
                       />
                     ))}
                   </div>
@@ -295,6 +309,14 @@ export function QuotesList() {
           </div>
         </div>
       </Modal>
+
+      {/* PDF Viewer */}
+      <PDFViewer
+        isOpen={pdfModalOpen}
+        pdfUrl={pdfUrl}
+        title="Angebot (Lexware)"
+        onClose={closePdfModal}
+      />
     </div>
   );
 }
@@ -320,12 +342,13 @@ function QuickStat({ value, label, color }: {
 }
 
 // Quote Card
-function QuoteCard({ quote, index, onClick, onDelete, onStatusChange }: { 
-  quote: WawiQuote; 
+function QuoteCard({ quote, index, onClick, onDelete, onStatusChange, onOpenPdf }: {
+  quote: WawiQuote;
   index: number;
   onClick: () => void;
   onDelete?: () => void;
   onStatusChange: (status: string) => void;
+  onOpenPdf: (lexwareId: string) => void;
 }) {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -354,7 +377,7 @@ function QuoteCard({ quote, index, onClick, onDelete, onStatusChange }: {
 
   const handleClick = () => {
     if (isExported) {
-      window.open(`/api/lexware/quote-pdf?lexwareId=${(quote as any).lexware_quotation_id}`, "_blank");
+      onOpenPdf((quote as any).lexware_quotation_id);
     } else {
       onClick();
     }
