@@ -18,7 +18,10 @@ export interface UseOpenClawOptions {
  * Result from the OpenClaw API
  */
 export interface AskResult {
+  success: boolean;
   response: string;
+  agent: string;
+  timestamp: string;
 }
 
 /**
@@ -93,8 +96,14 @@ export function useOpenClaw(
         }
 
         const data: AskResult = await response.json();
-        setLastResponse(data.response);
-        return data.response;
+
+        // Ensure response is a string
+        const responseText = typeof data.response === "string"
+          ? data.response
+          : JSON.stringify(data.response);
+
+        setLastResponse(responseText);
+        return responseText;
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "An unknown error occurred";
