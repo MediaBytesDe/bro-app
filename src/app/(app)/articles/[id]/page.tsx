@@ -39,7 +39,6 @@ export default function ArticleDetailPage() {
     name: "",
     sku: "",
     category: "",
-    category_id: null as string | null,
     manufacturer: "",
     description: "",
     unit: "Stück",
@@ -252,9 +251,8 @@ export default function ArticleDetailPage() {
             <CategorySelect
               label="Kategorie"
               categories={categories}
-              value={product.category_id || ""}
-              onChange={(id, name) => {
-                updateField("category_id", id);
+              value={product.category || ""}
+              onChange={(name) => {
                 updateField("category", name);
               }}
             />
@@ -556,7 +554,7 @@ function CategorySelect({ label, categories, value, onChange }: {
   label: string;
   categories: Category[];
   value: string;
-  onChange: (id: string, name: string) => void;
+  onChange: (name: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -564,18 +562,18 @@ function CategorySelect({ label, categories, value, onChange }: {
   // Build tree structure
   const mainCats = categories.filter(c => !c.parent_id).sort((a, b) => a.sort_order - b.sort_order);
   const subCats = categories.filter(c => c.parent_id);
-  
+
   const tree = mainCats.map(main => ({
     ...main,
     children: subCats.filter(s => s.parent_id === main.id).sort((a, b) => a.sort_order - b.sort_order)
   }));
 
-  // Find current category name for display
-  const current = categories.find(c => c.id === value);
+  // Find current category by name for display
+  const current = categories.find(c => c.name === value);
   const parent = current?.parent_id ? categories.find(c => c.id === current.parent_id) : null;
-  const displayName = current 
+  const displayName = current
     ? (parent ? `${parent.name} → ${current.name}` : current.name)
-    : "Kategorie wählen...";
+    : value || "Kategorie wählen...";
 
   const toggleExpand = (id: string) => {
     const next = new Set(expanded);
@@ -585,8 +583,7 @@ function CategorySelect({ label, categories, value, onChange }: {
   };
 
   const handleSelect = (cat: Category) => {
-    const parentCat = cat.parent_id ? categories.find(c => c.id === cat.parent_id) : null;
-    onChange(cat.id, cat.name);
+    onChange(cat.name);
     setOpen(false);
   };
 
@@ -641,8 +638,8 @@ function CategorySelect({ label, categories, value, onChange }: {
                       type="button"
                       onClick={() => handleSelect(main)}
                       className={`flex-1 px-3 py-2 rounded-lg text-left text-sm font-medium transition-colors ${
-                        value === main.id 
-                          ? 'bg-[#fa432a]/20 text-[#fa432a]' 
+                        value === main.name
+                          ? 'bg-[#fa432a]/20 text-[#fa432a]'
                           : 'text-white hover:bg-neutral-800'
                       }`}
                     >
@@ -659,8 +656,8 @@ function CategorySelect({ label, categories, value, onChange }: {
                           type="button"
                           onClick={() => handleSelect(sub)}
                           className={`w-full px-3 py-2 rounded-lg text-left text-sm transition-colors ${
-                            value === sub.id 
-                              ? 'bg-[#fa432a]/20 text-[#fa432a]' 
+                            value === sub.name
+                              ? 'bg-[#fa432a]/20 text-[#fa432a]'
                               : 'text-neutral-300 hover:bg-neutral-800 hover:text-white'
                           }`}
                         >
