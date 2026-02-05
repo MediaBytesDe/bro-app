@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useOpenClaw } from "@/hooks/useOpenClaw";
 import type { OpenClawAgent } from "@/hooks/useOpenClaw";
+import { saveMessage, loadMessages } from "@/app/actions/openclaw-messages";
+import { getOpenClawClient } from "@/lib/openclaw";
 import {
   Bot,
   Send,
@@ -27,9 +29,53 @@ interface Message {
 export default function OpenClawPage() {
   const [activeAgent, setActiveAgent] = useState<OpenClawAgent>("main");
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messagesByAgent, setMessagesByAgent] = useState<{
+    main: Message[];
+    einkauf: Message[];
+    kundenservice: Message[];
+  }>({
+    main: [],
+    einkauf: [],
+    kundenservice: [],
+  });
+  const [loadingMessages, setLoadingMessages] = useState(false);
 
   const { ask, loading, error } = useOpenClaw();
+
+  // Load messages for active agent
+  useEffect(() => {
+    const loadAgentMessages = async () => {
+      // Skip if already loaded
+      if (messagesByAgent[activeAgent].length > 0) return;
+
+      setLoadingMessages(true);
+      const result = await loadMessages(activeAgent);
+
+      if (result.success && result.messages) {
+        setMessagesByAgent((prev) => ({
+          ...prev,
+          [activeAgent]: result.messages!.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+            agent: msg.agent,
+            timestamp: msg.created_at,
+          })),
+        }));
+      }
+
+      setLoadingMessages(false);
+    };
+
+    loadAgentMessages();
+  }, [activeAgent]);
+
+  // WebSocket lifecycle: disconnect on unmount
+  useEffect(() => {
+    return () => {
+      const client = getOpenClawClient();
+      client.disconnect();
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,32 +86,46 @@ export default function OpenClawPage() {
 
     setInput("");
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "user",
-        content: userMessage,
-        agent: activeAgent,
-        timestamp,
-      },
-    ]);
+    // Optimistic update: add user message to UI
+    const userMsg: Message = {
+      role: "user",
+      content: userMessage,
+      agent: activeAgent,
+      timestamp,
+    };
 
+    setMessagesByAgent((prev) => ({
+      ...prev,
+      [activeAgent]: [...prev[activeAgent], userMsg],
+    }));
+
+    // Save user message to database
+    await saveMessage(activeAgent, "user", userMessage);
+
+    // Ask agent
     const response = await ask(userMessage, activeAgent);
 
     if (response) {
-      setMessages((prev) => [
+      const assistantMsg: Message = {
+        role: "assistant",
+        content: response,
+        agent: activeAgent,
+        timestamp: new Date().toISOString(),
+      };
+
+      // Update UI with assistant response
+      setMessagesByAgent((prev) => ({
         ...prev,
-        {
-          role: "assistant",
-          content: response,
-          agent: activeAgent,
-          timestamp: new Date().toISOString(),
-        },
-      ]);
+        [activeAgent]: [...prev[activeAgent], assistantMsg],
+      }));
+
+      // Save assistant message to database
+      await saveMessage(activeAgent, "assistant", response);
     }
   };
 
   const activeAgentInfo = AGENTS.find((a) => a.id === activeAgent);
+  const currentMessages = messagesByAgent[activeAgent];
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
@@ -103,14 +163,21 @@ export default function OpenClawPage() {
 
       {/* Messages */}
       <div className="flex-1 overflow-auto p-6 space-y-4 bg-[#0a0a0a]">
-        {messages.length === 0 && (
+        {loadingMessages && (
+          <div className="text-center text-neutral-500 mt-8">
+            <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin" />
+            <p>Nachrichten werden geladen...</p>
+          </div>
+        )}
+
+        {!loadingMessages && currentMessages.length === 0 && (
           <div className="text-center text-neutral-500 mt-8">
             <Bot className="w-12 h-12 mx-auto mb-3 opacity-50" />
             <p>Keine Nachrichten. Stellen Sie eine Frage an {activeAgentInfo?.name}.</p>
           </div>
         )}
 
-        {messages.map((msg, i) => (
+        {currentMessages.map((msg, i) => (
           <div
             key={i}
             className={`flex gap-3 ${
