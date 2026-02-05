@@ -41,9 +41,12 @@ export const QuoteItemsList = memo(function QuoteItemsList({
       const newItems = [...items];
       const [draggedItem] = newItems.splice(dragIndex, 1);
       newItems.splice(targetIndex, 0, draggedItem);
-      // Update position numbers
-      newItems.forEach((item, i) => (item.position_number = i + 1));
-      onReorderItems(newItems);
+      // Update position numbers with immutable pattern
+      const updatedItems = newItems.map((item, i) => ({
+        ...item,
+        position_number: i + 1,
+      }));
+      onReorderItems(updatedItems);
     }
     setDragIndex(null);
   };

@@ -155,13 +155,13 @@ export function QuoteEditor({ quoteId, templateId, initialProjectId, initialCust
   useEffect(() => {
     if (isPackageDeal && items.length > 0) {
       const { totalKwp, totalKwh } = calculateSystemSpecs();
-      
+
       // Auto-set package position title if empty or follows pattern
       const isDefaultPkgTitle = !packageTitle || packageTitle.startsWith("Photovoltaik-Komplettpaket");
       if (isDefaultPkgTitle && totalKwp > 0) {
         setPackageTitle(`Photovoltaik-Komplettpaket ${formatNumber(totalKwp)} kWp`);
       }
-      
+
       // Auto-set description if empty or follows pattern
       const isDefaultDesc = !packageDescription || packageDescription.startsWith("inkl. Speicheroption");
       if (isDefaultDesc && totalKwh > 0) {
@@ -170,6 +170,7 @@ export function QuoteEditor({ quoteId, templateId, initialProjectId, initialCust
         setPackageDescription("");
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPackageDeal, items]);
   
   // Auto-generate introduction when customer is selected
@@ -186,7 +187,7 @@ export function QuoteEditor({ quoteId, templateId, initialProjectId, initialCust
         } else if (customer.company_name) {
           name = customer.company_name;
         }
-        
+
         // Only auto-set if intro is empty or follows our pattern
         const isDefaultIntro = !introText || introText.startsWith("Sehr geehrte");
         if (isDefaultIntro && name) {
@@ -196,6 +197,7 @@ vielen Dank für Ihr Interesse an unseren Produkten. Gerne unterbreite ich Ihnen
         }
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId, customers]);
   
   // Set default footer with sender name

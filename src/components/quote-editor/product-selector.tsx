@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState } from 'react';
+import { memo, useState, useMemo, useEffect } from 'react';
 import { Search, Plus } from 'lucide-react';
 import type { Product } from '@/types/wawi';
 import { PRODUCT_CATEGORIES, formatCurrency } from '@/types/wawi';
@@ -24,14 +24,26 @@ export const ProductSelector = memo(function ProductSelector({
   const [productSearch, setProductSearch] = useState('');
   const [productCategory, setProductCategory] = useState<string | null>(null);
 
-  const filteredProducts = products.filter((p) => {
-    const matchesSearch =
-      !productSearch ||
-      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-      p.sku.toLowerCase().includes(productSearch.toLowerCase());
-    const matchesCat = !productCategory || p.category === productCategory;
-    return matchesSearch && matchesCat;
-  });
+  // Reset search state when modal closes
+  useEffect(() => {
+    if (!open) {
+      setProductSearch('');
+      setProductCategory(null);
+    }
+  }, [open]);
+
+  const filteredProducts = useMemo(
+    () =>
+      products.filter((p) => {
+        const matchesSearch =
+          !productSearch ||
+          p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+          (p.sku?.toLowerCase().includes(productSearch.toLowerCase()) ?? false);
+        const matchesCat = !productCategory || p.category === productCategory;
+        return matchesSearch && matchesCat;
+      }),
+    [products, productSearch, productCategory]
+  );
 
   return (
     <Modal open={open} onClose={onClose} title="Produkt hinzufügen">
