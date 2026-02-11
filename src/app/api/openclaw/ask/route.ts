@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     }
 
     // Validate agent parameter
-    const validAgents = ["main", "einkauf", "kundenservice"];
+    const validAgents = ["main", "einkauf", "kundenservice", "content:main"];
     if (!validAgents.includes(agent)) {
       return NextResponse.json(
         { error: `Invalid agent. Must be one of: ${validAgents.join(", ")}` },
@@ -66,6 +66,9 @@ export async function POST(request: Request) {
           break;
         case "kundenservice":
           response = await client.askKundenservice(message);
+          break;
+        case "content:main":
+          response = await client.askContent(message);
           break;
         case "main":
         default:

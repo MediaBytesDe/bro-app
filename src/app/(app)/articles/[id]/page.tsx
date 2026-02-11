@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { LiveCalculation } from "@/components/live-calculation";
+import { AIAssistantButton } from "@/components/ai-assistant-button";
 
 type Category = {
   id: string;
@@ -274,10 +275,11 @@ export default function ArticleDetailPage() {
               onChange={(v) => updateField("unit", v)}
             />
           </div>
-          <Textarea
+          <TextareaWithAI
             label="Beschreibung"
             value={product.description || ""}
             onChange={(v) => updateField("description", v)}
+            product={product}
           />
         </div>
       </Section>
@@ -512,6 +514,42 @@ function Textarea({ label, value, onChange }: {
   return (
     <div>
       <label className="block text-xs text-neutral-500 mb-1.5">{label}</label>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={3}
+        className="w-full px-4 py-3 rounded-xl bg-neutral-900 border border-neutral-800 text-white placeholder:text-neutral-600 focus:outline-none focus:border-[#fa432a]/50 transition-colors resize-none"
+      />
+    </div>
+  );
+}
+
+function TextareaWithAI({ label, value, onChange, product }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  product: Partial<Product>;
+}) {
+  // Build context data from product
+  const contextData: Record<string, string> = {};
+
+  if (product.name) contextData.productName = product.name;
+  if (product.category) contextData.category = product.category;
+  if (product.manufacturer) contextData.manufacturer = product.manufacturer;
+  if (product.sku) contextData.sku = product.sku;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="block text-xs text-neutral-500">{label}</label>
+        <AIAssistantButton
+          domain="product_description"
+          currentValue={value}
+          contextData={contextData}
+          onAccept={onChange}
+          size="sm"
+        />
+      </div>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}

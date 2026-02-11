@@ -88,23 +88,24 @@ export class OpenClawClient {
       const runId = payload?.runId;
       if (runId && this.messageQueue.has(runId)) {
         const pending = this.messageQueue.get(runId)!;
-        // Streaming delta
+        // Streaming delta - OpenClaw sends COMPLETE text up to this point, not deltas!
         if (payload.state === 'delta' && payload.message) {
           // Parse Anthropic Messages API format
           const message = payload.message;
           if (typeof message === 'object' && message.content && Array.isArray(message.content)) {
-            // Extract text from content blocks
+            // Extract text from content blocks - OVERWRITE (not append!)
             pending.content = message.content
               .filter((block: any) => block.type === 'text')
               .map((block: any) => block.text)
               .join('');
           } else if (typeof message === 'string') {
-            // Fallback for plain string format
+            // Fallback for plain string format - OVERWRITE (not append!)
             pending.content = message;
           }
         }
         // Final state
         if (payload.state === 'final') {
+          console.log('[OpenClaw] Stream completed, total length:', pending.content.length);
           pending.resolve(pending.content);
           this.messageQueue.delete(runId);
         }
@@ -135,11 +136,11 @@ export class OpenClawClient {
       // Register with runId for chat events
       this.messageQueue.set(runId, { resolve, content: '' });
 
-      // Timeout after 120 seconds (agents can take longer)
+      // Timeout after 180 seconds (3 minutes for complex content generation)
       const timeout = setTimeout(() => {
         this.messageQueue.delete(runId);
-        reject(new Error('Request timeout'));
-      }, 120000);
+        reject(new Error('Request timeout after 3 minutes'));
+      }, 180000);
 
       const originalResolve = this.messageQueue.get(runId)!.resolve;
       this.messageQueue.get(runId)!.resolve = (value) => {
@@ -174,6 +175,10 @@ export class OpenClawClient {
 
   async askKundenservice(message: string): Promise<string> {
     return this.ask(message, 'agent:kundenservice:main');
+  }
+
+  async askContent(message: string): Promise<string> {
+    return this.ask(message, 'agent:content:main');
   }
 
   disconnect() {

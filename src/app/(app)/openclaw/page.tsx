@@ -17,6 +17,7 @@ const AGENTS = [
   { id: "main" as const, name: "Bro (Main)", color: "blue" },
   { id: "einkauf" as const, name: "Einkauf", color: "green" },
   { id: "kundenservice" as const, name: "Kundenservice", color: "purple" },
+  { id: "content:main" as const, name: "Content", color: "orange" },
 ];
 
 interface Message {
@@ -33,10 +34,12 @@ export default function OpenClawPage() {
     main: Message[];
     einkauf: Message[];
     kundenservice: Message[];
+    "content:main": Message[];
   }>({
     main: [],
     einkauf: [],
     kundenservice: [],
+    "content:main": [],
   });
   const [loadedAgents, setLoadedAgents] = useState<Set<OpenClawAgent>>(new Set());
   const [loadingMessages, setLoadingMessages] = useState(false);

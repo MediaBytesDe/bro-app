@@ -3,6 +3,7 @@
 import { memo, useMemo } from 'react';
 import { CheckCircle, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useMyTasks } from '@/lib/queries/tasks';
 import { createClient } from '@/lib/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 
@@ -13,6 +14,9 @@ interface TasksSectionProps {
 export const TasksSection = memo(function TasksSection({ userId }: TasksSectionProps) {
   const router = useRouter();
   const supabase = createClient();
+
+  // Fetch regular standalone tasks
+  const { data: regularTasks, isLoading: loadingRegular } = useMyTasks(userId);
 
   // Fetch project tasks
   const { data: projectTasks, isLoading: loadingProject } = useQuery({
@@ -33,14 +37,14 @@ export const TasksSection = memo(function TasksSection({ userId }: TasksSectionP
     enabled: !!userId,
   });
 
-  // Fetch unassigned project tasks
-  const { data: openTasks, isLoading: loadingOpen } = useQuery({
-    queryKey: ['project_tasks', 'unassigned'],
+  // Fetch unassigned tasks (both standalone and project tasks)
+  const { data: openStandaloneTasks, isLoading: loadingOpenStandalone } = useQuery({
+    queryKey: ['tasks', 'unassigned'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('project_tasks')
-        .select('*, project:projects(id, name, slug)')
-        .is('assigned_user_id', null)
+        .from('tasks')
+        .select('*')
+        .is('assigned_to', null)
         .in('status', ['open', 'in_progress'])
         .order('created_at', { ascending: false })
         .limit(5);
@@ -50,20 +54,23 @@ export const TasksSection = memo(function TasksSection({ userId }: TasksSectionP
     },
   });
 
-  // Sort tasks by due date
+  // Combine and sort tasks by due date
   const combinedTasks = useMemo(() => {
-    if (!projectTasks) return [];
+    if (!regularTasks && !projectTasks) return [];
 
-    const tasks = (projectTasks || []).map(t => ({ ...t, _source: 'project_tasks' }));
+    const tasks = [
+      ...(regularTasks || []).map(t => ({ ...t, _source: 'tasks' })),
+      ...(projectTasks || []).map(t => ({ ...t, _source: 'project_tasks' })),
+    ];
 
     return tasks.sort((a, b) => {
       if (!a.due_date) return 1;
       if (!b.due_date) return -1;
       return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
     }).slice(0, 8);
-  }, [projectTasks]);
+  }, [regularTasks, projectTasks]);
 
-  if (loadingProject || loadingOpen) {
+  if (loadingRegular || loadingProject || loadingOpenStandalone) {
     return (
       <div className="space-y-6">
         <div className="p-4 rounded-2xl bg-[#111] border border-[#1a1a1a]">
@@ -116,7 +123,7 @@ export const TasksSection = memo(function TasksSection({ userId }: TasksSectionP
       </section>
 
       {/* Unassigned Tasks */}
-      {openTasks && openTasks.length > 0 && (
+      {openStandaloneTasks && openStandaloneTasks.length > 0 && (
         <section className="p-4 rounded-2xl bg-[#0a0a0a] border border-[#141414]">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -128,7 +135,7 @@ export const TasksSection = memo(function TasksSection({ userId }: TasksSectionP
           </div>
 
           <div className="space-y-1.5">
-            {openTasks.map((task) => (
+            {openStandaloneTasks.map((task) => (
               <TaskCard
                 key={task.id}
                 task={task}

@@ -5,7 +5,7 @@ import { useState, useCallback } from "react";
 /**
  * Type for the agent names available in OpenClaw
  */
-export type OpenClawAgent = "main" | "einkauf" | "kundenservice";
+export type OpenClawAgent = "main" | "einkauf" | "kundenservice" | "content:main";
 
 /**
  * Options for configuring the useOpenClaw hook

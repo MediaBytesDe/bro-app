@@ -7,7 +7,7 @@ import {
   Home, Users, Brain, FileText, LogOut, Building2,
   FileSignature, Calendar, Wrench, FolderOpen, Cpu, Bot,
   ClipboardList, MoreHorizontal, X, Package, ChevronDown,
-  UserCircle, ShoppingCart, Briefcase, Settings, MessageSquare, Download, Database
+  UserCircle, ShoppingCart, Briefcase, Settings, MessageSquare, Download, Database, Sparkles
 } from "lucide-react";
 import type { User as AuthUser } from "@supabase/supabase-js";
 import type { LucideIcon } from "lucide-react";
@@ -30,6 +30,7 @@ const allTabs = [
   { id: "skills", path: "/skills", label: "Skills", icon: Brain },
   { id: "logs", path: "/logs", label: "Logs", icon: FileText },
   { id: "openclaw", path: "/openclaw", label: "OpenClaw", icon: Bot },
+  { id: "ai-prompts", path: "/ai-prompts", label: "KI-Prompts", icon: Sparkles },
 ];
 
 // Desktop Navigation mit Dropdown-Gruppen
@@ -76,14 +77,15 @@ const desktopNav: NavItem[] = [
       { id: "trades", path: "/trades", label: "Gewerke", icon: Wrench, description: "DC/AC-Montage, Elektro, etc." },
     ]
   },
-  { 
-    id: "system", 
-    label: "System", 
+  {
+    id: "system",
+    label: "System",
     icon: Settings,
     children: [
       { id: "skills", path: "/skills", label: "Skills", icon: Brain, description: "Bro Fähigkeiten" },
       { id: "logs", path: "/logs", label: "Logs", icon: FileText, description: "Aktivitätsprotokoll" },
       { id: "openclaw", path: "/openclaw", label: "OpenClaw", icon: Bot, description: "KI-Assistenten" },
+      { id: "ai-prompts", path: "/ai-prompts", label: "KI-Prompts", icon: Sparkles, description: "Content-Vorlagen verwalten" },
     ]
   },
 ];
