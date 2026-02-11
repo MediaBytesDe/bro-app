@@ -48,7 +48,10 @@ export function Dashboard() {
   }, [profile?.id]);
 
   async function loadData() {
-    if (!profile?.id) return;
+    if (!profile?.id) {
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     try {
