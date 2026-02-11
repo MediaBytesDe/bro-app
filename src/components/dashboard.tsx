@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/contexts/auth-context";
 import { Spinner } from "@/components/ui/spinner";
 import { AppointmentsSection } from "@/components/dashboard/appointments-section";
 import { TasksSection } from "@/components/dashboard/tasks-section";
@@ -39,23 +38,38 @@ interface DashboardData {
 export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const { profile, loading: authLoading } = useAuth();
+  const [displayName, setDisplayName] = useState<string>("");
+  const [userId, setUserId] = useState<string>("");
   const router = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
-    if (!authLoading) {
-      loadData();
-    }
-  }, [profile?.id, authLoading]);
+    loadData();
+  }, []);
 
   async function loadData() {
-    if (!profile?.id) {
+    setLoading(true);
+    
+    // Get user directly from supabase instead of AuthProvider
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
       setLoading(false);
       return;
     }
-
-    setLoading(true);
+    
+    const { data: profileData } = await supabase
+      .from("users")
+      .select("id, display_name")
+      .eq("auth_id", user.id)
+      .single();
+    
+    if (profileData) {
+      setDisplayName(profileData.display_name || "");
+      setUserId(profileData.id);
+    } else {
+      setLoading(false);
+      return;
+    }
     try {
       const now = new Date();
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
@@ -150,7 +164,7 @@ export function Dashboard() {
         <div>
           <p className="text-neutral-500 text-sm">{formatDate()}</p>
           <h1 className="text-2xl font-bold text-white mt-1">
-            {getGreeting()}, {profile?.display_name?.split(" ")[0] || "👋"}
+            {getGreeting()}, {displayName?.split(" ")[0] || "👋"}
           </h1>
         </div>
         <div className="flex gap-2">
@@ -197,8 +211,8 @@ export function Dashboard() {
       <div className="grid md:grid-cols-2 gap-6">
         {/* Left Column - Termine & Aufgaben */}
         <div className="space-y-6">
-          <AppointmentsSection userId={profile?.id || ''} />
-          <TasksSection userId={profile?.id || ''} />
+          <AppointmentsSection userId={userId} />
+          <TasksSection userId={userId} />
         </div>
 
         {/* Right Column - Leads & Arbeitsbereiche */}
