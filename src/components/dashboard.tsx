@@ -39,13 +39,15 @@ interface DashboardData {
 export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const { profile } = useAuth();
+  const { profile, loading: authLoading } = useAuth();
   const router = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
-    loadData();
-  }, [profile?.id]);
+    if (!authLoading) {
+      loadData();
+    }
+  }, [profile?.id, authLoading]);
 
   async function loadData() {
     if (!profile?.id) {

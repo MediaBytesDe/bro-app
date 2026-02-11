@@ -81,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initAuth = async () => {
       try {
+        // getSession reads from local storage (fast, no network)
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
@@ -93,7 +94,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             error: profile ? null : "Kein aktives Profil gefunden",
           });
         } else {
-          setState({ ...defaultState, loading: false });
+          // No session from getSession - try getUser (network call, refreshes token)
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const profile = await fetchProfile(user.id);
+            const { data: { session: refreshedSession } } = await supabase.auth.getSession();
+            setState({
+              user,
+              profile,
+              session: refreshedSession,
+              loading: false,
+              error: profile ? null : "Kein aktives Profil gefunden",
+            });
+          } else {
+            setState({ ...defaultState, loading: false });
+          }
         }
       } catch (err) {
         setState({
