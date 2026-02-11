@@ -1,35 +1,40 @@
-import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
-import { CustomerShell } from "@/components/customer-shell";
+"use client";
 
-export default async function CustomerLayout({
+import { useAuth } from "@/contexts/auth-context";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { CustomerShell } from "@/components/customer-shell";
+import { Spinner } from "@/components/ui/spinner";
+
+export default function CustomerLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { user, profile, loading, isCustomer, isAdmin } = useAuth();
+  const router = useRouter();
 
-  if (!user) {
-    redirect("/login");
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      router.replace("/login");
+    } else if (!isCustomer && !isAdmin) {
+      router.replace("/");
+    }
+  }, [user, loading, isCustomer, isAdmin, router]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#0a0a0a]">
+        <Spinner />
+      </div>
+    );
   }
 
-  // Check if user is a customer or admin (admin can preview)
-  const { data: profile, error: profileError } = await supabase
-    .from("users")
-    .select("role, display_name, email, auth_id")
-    .eq("auth_id", user.id)
-    .eq("active", true)
-    .single();
-
-  // Not a customer or admin - redirect to main app
-  const allowedRoles = ["customer", "admin", "superadmin"];
-  if (profileError || !allowedRoles.includes(profile?.role)) {
-    redirect("/");
-  }
+  if (!user || !profile) return null;
 
   return (
-    <CustomerShell profile={{ ...profile, auth_id: user.id, role: profile.role }}>
+    <CustomerShell profile={{ ...profile, auth_id: user.id }}>
       {children}
     </CustomerShell>
   );

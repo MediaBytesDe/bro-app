@@ -1,31 +1,37 @@
-import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
-import { AppShell } from "@/components/app-shell";
+"use client";
 
-export default async function AppLayout({
+import { useAuth } from "@/contexts/auth-context";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { AppShell } from "@/components/app-shell";
+import { Spinner } from "@/components/ui/spinner";
+
+export default function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { user, profile, loading, isCustomer } = useAuth();
+  const router = useRouter();
 
-  if (!user) {
-    redirect("/login");
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      router.replace("/login");
+    } else if (isCustomer) {
+      router.replace("/portal");
+    }
+  }, [user, loading, isCustomer, router]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#0a0a0a]">
+        <Spinner />
+      </div>
+    );
   }
 
-  // Check if user is a customer - redirect to portal
-  const { data: profile, error: profileError } = await supabase
-    .from("users")
-    .select("role")
-    .eq("auth_id", user.id)
-    .eq("active", true)
-    .single();
-
-  // Only redirect if we confirmed user is a customer
-  if (!profileError && profile?.role === "customer") {
-    redirect("/portal");
-  }
+  if (!user || isCustomer) return null;
 
   return <AppShell user={user}>{children}</AppShell>;
 }
