@@ -22,6 +22,10 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: "100mb",
     },
+    // Cache pages on client for instant back-navigation
+    staleTimes: {
+      dynamic: 60,  // seconds — cached page used on back-swipe
+    },
     // Enable optimizePackageImports for better tree-shaking
     optimizePackageImports: [
       '@react-pdf/renderer',
