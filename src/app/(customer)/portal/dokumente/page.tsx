@@ -25,47 +25,54 @@ import { cn } from "@/lib/utils";
 interface Document {
   id: string;
   name: string;
-  file_url: string;
-  file_type: string;
-  file_size: number;
-  category: string;
-  status: string;
-  uploaded_by: string;
+  storage_url: string | null;
+  storage_path: string | null;
+  mime_type: string | null;
+  file_size: number | null;
+  document_type: string;
+  uploaded_by: string | null;
   created_at: string;
-  project?: {
-    name: string;
-  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  project?: any;
 }
 
 const categoryLabels: Record<string, string> = {
-  contract: "Verträge",
-  invoice: "Rechnungen",
-  plan: "Planungsunterlagen",
-  permit: "Genehmigungen",
-  report: "Berichte",
-  photo: "Fotos",
-  other: "Sonstiges",
-  customer_upload: "Ihre Uploads",
+  vertrag: "Verträge",
+  angebot: "Angebote",
+  rechnung: "Rechnungen",
+  aufmass: "Aufmaße",
+  plan: "Pläne",
+  foto: "Fotos",
+  protokoll: "Protokolle",
+  unterschrift: "Unterschriften",
+  datenschutz: "Datenschutz",
+  sonstiges: "Sonstiges",
 };
 
-const statusConfig: Record<string, { label: string; icon: any; color: string }> = {
-  pending: { label: "Wird geprüft", icon: Clock, color: "text-yellow-400" },
-  approved: { label: "Freigegeben", icon: CheckCircle, color: "text-green-400" },
-  rejected: { label: "Abgelehnt", icon: AlertCircle, color: "text-red-400" },
-};
+// Status icons removed — documents table has no status column
 
-function getFileIcon(fileType: string) {
-  if (fileType.startsWith("image/")) return ImageIcon;
-  if (fileType.includes("spreadsheet") || fileType.includes("excel"))
+function getFileIcon(mimeType: string | null) {
+  if (!mimeType) return File;
+  if (mimeType.startsWith("image/")) return ImageIcon;
+  if (mimeType.includes("spreadsheet") || mimeType.includes("excel"))
     return FileSpreadsheet;
-  if (fileType.includes("pdf")) return FileText;
+  if (mimeType.includes("pdf")) return FileText;
   return File;
 }
 
-function formatFileSize(bytes: number) {
+function formatFileSize(bytes: number | null) {
+  if (!bytes) return "-";
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
   return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+async function getCustomerProjectIds(supabase: ReturnType<typeof createClient>, customerId: string): Promise<string> {
+  const { data } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("customer_id", customerId);
+  return (data || []).map(p => `"${p.id}"`).join(",") || `"none"`;
 }
 
 export default function DokumentePage() {
@@ -112,15 +119,14 @@ export default function DokumentePage() {
 
       setCustomerId(cId);
 
-      // Load documents for customer's projects + direct uploads
+      // Load documents for this customer (direct or via project)
       const { data: docsData } = await supabase
         .from("documents")
         .select(`
-          id, name, file_url, file_type, file_size, category, status, uploaded_by, created_at,
+          id, name, storage_url, storage_path, mime_type, file_size, document_type, uploaded_by, created_at,
           project:projects(name)
         `)
-        .or(`customer_id.eq.${cId},project.customer_id.eq.${cId}`)
-        .eq("visible_to_customer", true)
+        .or(`customer_id.eq.${cId},project_id.in.(${await getCustomerProjectIds(supabase, cId!)})`)
         .order("created_at", { ascending: false });
 
       setDocuments(docsData || []);
@@ -160,13 +166,14 @@ export default function DokumentePage() {
       const { error: docError } = await supabase.from("documents").insert({
         customer_id: customerId,
         name: file.name,
-        file_url: urlData.publicUrl,
-        file_type: file.type,
+        storage_path: filePath,
+        storage_url: urlData.publicUrl,
+        file_name: file.name,
+        file_extension: file.name.split(".").pop() || null,
+        mime_type: file.type,
         file_size: file.size,
-        category: "customer_upload",
-        status: "pending",
+        document_type: "sonstiges",
         uploaded_by: "customer",
-        visible_to_customer: true,
       });
 
       if (docError) {
@@ -205,7 +212,7 @@ export default function DokumentePage() {
 
   // Group documents by category
   const docsByCategory = documents.reduce((acc, doc) => {
-    const cat = doc.category || "other";
+    const cat = doc.document_type || "sonstiges";
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(doc);
     return acc;
@@ -321,15 +328,13 @@ export default function DokumentePage() {
                     <th className="text-left py-3 px-4">Dokument</th>
                     <th className="text-left py-3 px-4 w-24">Größe</th>
                     <th className="text-left py-3 px-4 w-28">Datum</th>
-                    <th className="text-left py-3 px-4 w-28">Status</th>
+                    <th className="text-left py-3 px-4 w-28">Typ</th>
                     <th className="w-28"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredDocs.map((doc) => {
-                    const FileIcon = getFileIcon(doc.file_type);
-                    const status = statusConfig[doc.status];
-                    const StatusIcon = status?.icon;
+                    const FileIcon = getFileIcon(doc.mime_type);
 
                     return (
                       <tr
@@ -354,19 +359,14 @@ export default function DokumentePage() {
                           {new Date(doc.created_at).toLocaleDateString("de-DE")}
                         </td>
                         <td className="py-3 px-4">
-                          {doc.uploaded_by === "customer" && status ? (
-                            <span className={cn("flex items-center gap-1 text-xs", status.color)}>
-                              <StatusIcon className="w-3 h-3" />
-                              {status.label}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-green-400">Freigegeben</span>
-                          )}
+                          <span className="text-xs text-neutral-400">
+                            {categoryLabels[doc.document_type] || doc.document_type}
+                          </span>
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-1">
                             <a
-                              href={doc.file_url}
+                              href={doc.storage_url || "#"}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="p-1.5 hover:bg-[#1a1a1a] rounded transition-colors"
@@ -375,7 +375,7 @@ export default function DokumentePage() {
                               <Eye className="w-4 h-4 text-neutral-400" />
                             </a>
                             <a
-                              href={doc.file_url}
+                              href={doc.storage_url || "#"}
                               download={doc.name}
                               className="p-1.5 hover:bg-[#1a1a1a] rounded transition-colors"
                               title="Herunterladen"

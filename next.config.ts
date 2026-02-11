@@ -71,7 +71,8 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https:",
               "font-src 'self' data:",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co wss://bro-api.brojekt.dev",
+              "frame-src 'self' https://*.supabase.co blob:",
               "frame-ancestors 'self'",
             ].join('; ')
           }
