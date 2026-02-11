@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useOpenClaw } from "@/hooks/useOpenClaw";
 import type { OpenClawAgent } from "@/hooks/useOpenClaw";
 import { saveMessage, loadMessages } from "@/app/actions/openclaw-messages";
@@ -44,6 +44,7 @@ export default function OpenClawPage() {
   const [loadedAgents, setLoadedAgents] = useState<Set<OpenClawAgent>>(new Set());
   const [loadingMessages, setLoadingMessages] = useState(false);
 
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const { ask, loading, error } = useOpenClaw();
 
   // Load messages for active agent
@@ -139,6 +140,11 @@ export default function OpenClawPage() {
   const activeAgentInfo = AGENTS.find((a) => a.id === activeAgent);
   const currentMessages = messagesByAgent[activeAgent];
 
+  // Auto-scroll to bottom when messages change or loading state changes
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [currentMessages.length, loading]);
+
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
       {/* Header */}
@@ -233,6 +239,8 @@ export default function OpenClawPage() {
             </div>
           </div>
         )}
+
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Error Display */}
