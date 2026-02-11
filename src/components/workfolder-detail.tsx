@@ -130,7 +130,29 @@ export function WorkfolderDetail({ project }: Props) {
   
   // Lightbox / Document Preview
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
+  const [previewDoc, setPreviewDocRaw] = useState<Document | null>(null);
+
+  // Wrap setPreviewDoc to push/pop history for back-swipe support
+  const setPreviewDoc = useCallback((doc: Document | null) => {
+    if (doc) {
+      window.history.pushState({ preview: true }, "");
+      setPreviewDocRaw(doc);
+    } else {
+      setPreviewDocRaw(null);
+    }
+  }, []);
+
+  // Close preview on browser back (swipe)
+  useEffect(() => {
+    const onPopState = (e: PopStateEvent) => {
+      if (previewDoc) {
+        e.preventDefault();
+        setPreviewDocRaw(null);
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [previewDoc]);
   
   // Document delete
   const [deleteDocTarget, setDeleteDocTarget] = useState<{ id: string; name: string; storagePath: string | null } | null>(null);
@@ -1848,7 +1870,7 @@ export function WorkfolderDetail({ project }: Props) {
       {previewDoc && (
         <div 
           className="fixed inset-0 z-50 bg-black/95 flex flex-col"
-          onClick={() => setPreviewDoc(null)}
+          onClick={() => window.history.back()}
         >
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-neutral-800">
@@ -1880,7 +1902,7 @@ export function WorkfolderDetail({ project }: Props) {
                 <ExternalLink className="w-5 h-5" />
               </a>
               <button
-                onClick={() => setPreviewDoc(null)}
+                onClick={() => window.history.back()}
                 className="btn btn-ghost btn-sm text-white"
               >
                 <X className="w-6 h-6" />
