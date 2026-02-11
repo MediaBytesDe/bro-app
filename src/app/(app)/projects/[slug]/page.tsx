@@ -1,28 +1,51 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { WorkfolderDetail } from "@/components/workfolder-detail";
 import { WorkfolderList } from "@/components/workfolder-list";
-import { createClient } from "@/lib/supabase/server";
-import { notFound } from "next/navigation";
+import { Spinner } from "@/components/ui/spinner";
 
-interface Props {
-  params: Promise<{ slug: string }>;
-}
+export default function ProjectPage() {
+  const { slug } = useParams<{ slug: string }>();
+  const [project, setProject] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
 
-export default async function ProjectPage({ params }: Props) {
-  const { slug } = await params;
-  const supabase = await createClient();
-  
-  const { data: project } = await supabase
-    .from("projects")
-    .select("*")
-    .eq("slug", slug)
-    .single();
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("projects")
+      .select("*")
+      .eq("slug", slug)
+      .single()
+      .then(({ data }) => {
+        if (!data) {
+          setNotFound(true);
+        } else {
+          setProject(data);
+        }
+        setLoading(false);
+      });
+  }, [slug]);
 
-  if (!project) {
-    notFound();
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <Spinner />
+      </div>
+    );
   }
 
-  // Arbeitsmappe (hat parent_id) → WorkfolderDetail (Kunde, Termine, etc.)
-  // Top-Level/Marke (kein parent_id) → WorkfolderList (Liste der Arbeitsmappen)
+  if (notFound) {
+    return (
+      <div className="flex items-center justify-center h-[60vh] text-neutral-500">
+        Projekt nicht gefunden
+      </div>
+    );
+  }
+
   if (project.parent_id) {
     return <WorkfolderDetail project={project} />;
   }
