@@ -210,7 +210,8 @@ export class OpenClawClient {
         params: {
           message,
           sessionKey,
-          deliver: false
+          deliver: false,
+          idempotencyKey: reqId
         }
       }));
     });
