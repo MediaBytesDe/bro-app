@@ -1901,11 +1901,39 @@ export function WorkfolderDetail({ project }: Props) {
                 />
               </div>
             ) : previewDoc.mime_type === "application/pdf" ? (
-              <iframe
-                src={previewDoc.storage_url || ""}
-                className="w-full h-full rounded-lg bg-white"
-                title={previewDoc.name}
-              />
+              <div className="h-full flex flex-col">
+                {/* iframe PDF viewer (works on desktop, not on mobile Chrome) */}
+                <iframe
+                  src={previewDoc.storage_url || ""}
+                  className="w-full flex-1 rounded-lg bg-white hidden md:block"
+                  title={previewDoc.name}
+                />
+                {/* Mobile fallback */}
+                <div className="flex-1 flex flex-col items-center justify-center md:hidden text-neutral-400">
+                  <FileText className="w-20 h-20 mb-4 opacity-50" />
+                  <p className="text-lg mb-2">{previewDoc.name}</p>
+                  <p className="text-sm text-neutral-500 mb-6">PDF-Vorschau nicht auf Mobilgeräten verfügbar</p>
+                  <div className="flex gap-3">
+                    <a
+                      href={previewDoc.storage_url || "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="btn btn-primary"
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" /> PDF öffnen
+                    </a>
+                    <a
+                      href={previewDoc.storage_url || "#"}
+                      download={previewDoc.name}
+                      onClick={(e) => e.stopPropagation()}
+                      className="btn btn-secondary"
+                    >
+                      <Download className="w-4 h-4 mr-2" /> Download
+                    </a>
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-neutral-400">
                 <FileText className="w-24 h-24 mb-4 opacity-50" />
