@@ -43,8 +43,10 @@ export async function updateSession(request: NextRequest) {
   );
   const isApiRoute = API_ROUTES.some((route) => pathname.startsWith(route));
 
-  // Skip auth for API routes (they handle their own auth)
+  // API routes handle their own auth, but we still need to refresh the session
+  // so that cookies stay valid for server-side auth checks in API routes
   if (isApiRoute) {
+    await supabase.auth.getUser();
     return supabaseResponse;
   }
 
