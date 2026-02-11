@@ -81,38 +81,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        console.log("[Auth] initAuth starting...");
-        // getSession reads from local storage (fast, no network)
-        const { data: { session } } = await supabase.auth.getSession();
-        console.log("[Auth] getSession:", session ? "got session" : "no session");
+        // Use getUser() directly - getSession() hangs on some Chrome Android versions
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
         
-        if (session?.user) {
-          const profile = await fetchProfile(session.user.id);
+        if (user) {
+          const profile = await fetchProfile(user.id);
           setState({
-            user: session.user,
+            user,
             profile,
-            session,
+            session: null,
             loading: false,
             error: profile ? null : "Kein aktives Profil gefunden",
           });
         } else {
-          // No session from getSession - try getUser (network call, refreshes token)
-          console.log("[Auth] trying getUser fallback...");
-          const { data: { user } } = await supabase.auth.getUser();
-          console.log("[Auth] getUser:", user ? "got user" : "no user");
-          if (user) {
-            const profile = await fetchProfile(user.id);
-            const { data: { session: refreshedSession } } = await supabase.auth.getSession();
-            setState({
-              user,
-              profile,
-              session: refreshedSession,
-              loading: false,
-              error: profile ? null : "Kein aktives Profil gefunden",
-            });
-          } else {
-            setState({ ...defaultState, loading: false });
-          }
+          setState({ ...defaultState, loading: false });
         }
       } catch (err) {
         setState({
