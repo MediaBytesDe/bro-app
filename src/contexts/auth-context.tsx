@@ -81,8 +81,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initAuth = async () => {
       try {
+        console.log("[Auth] initAuth starting...");
         // getSession reads from local storage (fast, no network)
         const { data: { session } } = await supabase.auth.getSession();
+        console.log("[Auth] getSession:", session ? "got session" : "no session");
         
         if (session?.user) {
           const profile = await fetchProfile(session.user.id);
@@ -95,7 +97,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         } else {
           // No session from getSession - try getUser (network call, refreshes token)
+          console.log("[Auth] trying getUser fallback...");
           const { data: { user } } = await supabase.auth.getUser();
+          console.log("[Auth] getUser:", user ? "got user" : "no user");
           if (user) {
             const profile = await fetchProfile(user.id);
             const { data: { session: refreshedSession } } = await supabase.auth.getSession();

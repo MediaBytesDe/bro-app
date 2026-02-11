@@ -3,10 +3,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { ROUTE_ACCESS, type UserRole } from "@/types/auth";
 
 // Öffentliche Routen (keine Auth erforderlich)
-const PUBLIC_ROUTES = ["/login", "/auth"];
+const PUBLIC_ROUTES = ["/login", "/auth", "/pwa-start"];
 
 // API-Routen die spezielle Behandlung brauchen
 const API_ROUTES = ["/api"];
+
+// Statische Dateien die nie durch Auth gehen sollen
+const STATIC_FILES = ["/manifest.json", "/sw.js", "/favicon.ico", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png", "/logo.png"];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -36,8 +39,15 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Check if public route
+  // Check route type
   const { pathname } = request.nextUrl;
+  
+  // Skip middleware entirely for static files
+  const isStaticFile = STATIC_FILES.includes(pathname) || pathname.startsWith("/_next/");
+  if (isStaticFile) {
+    return supabaseResponse;
+  }
+
   const isPublicRoute = PUBLIC_ROUTES.some((route) =>
     pathname.startsWith(route)
   );
