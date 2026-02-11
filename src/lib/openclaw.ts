@@ -51,7 +51,7 @@ export class OpenClawClient {
               minProtocol: 3,
               maxProtocol: 3,
               client: {
-                id: 'bro-app-client',
+                id: 'gateway-client',
                 version: '1.0.0',
                 platform: 'nodejs',
                 mode: 'backend'
