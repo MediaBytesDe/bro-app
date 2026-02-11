@@ -19,7 +19,7 @@ export function useMyTasks(userId: string | null) {
         .from('tasks')
         .select('*')
         .eq('assigned_to', userId)
-        .neq('status', 'completed')
+        .neq('status', 'done')
         .order('due_date', { ascending: true });
 
       if (error) throw error;
