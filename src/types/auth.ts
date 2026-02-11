@@ -79,6 +79,7 @@ export const ROUTE_ACCESS: Record<string, UserRole[]> = {
   "/logs": ["admin", "mitarbeiter"],
   "/skills": ["admin", "mitarbeiter"],
   "/openclaw": ["admin"],
+  "/debug-test": ["admin"],
   "/settings": ["admin"],
   // Customer Portal (admin can preview)
   "/portal": ["customer", "admin"],
