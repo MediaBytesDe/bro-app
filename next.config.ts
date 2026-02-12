@@ -33,6 +33,15 @@ const nextConfig: NextConfig = {
       'lucide-react',
     ],
   },
+  // Proxy Supabase Storage through our domain
+  async rewrites() {
+    return [
+      {
+        source: '/storage/:path*',
+        destination: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/:path*`,
+      },
+    ];
+  },
   // Security Headers
   async headers() {
     return [

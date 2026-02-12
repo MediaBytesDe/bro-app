@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
         name: docName || file.name,
         document_type: docType || "sonstiges",
         storage_path: fileName,
-        storage_url: urlData?.publicUrl,
+        storage_url: urlData?.publicUrl ? new URL(urlData.publicUrl).pathname : null,
         file_name: file.name,
         file_extension: file.name.split('.').pop() || null,
         file_size: file.size,
