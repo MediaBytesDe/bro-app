@@ -13,6 +13,24 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { quoteId, quoteData, items } = body;
 
+  // Only include columns that exist in wawi_quotes
+  const ALLOWED_QUOTE_COLS = new Set([
+    'customer_id', 'title', 'quote_date', 'valid_until', 'tax_type',
+    'is_package_deal', 'package_title', 'package_price', 'package_surcharge',
+    'status', 'subtotal', 'discount_percentage', 'discount_amount',
+    'tax_rate', 'tax_amount', 'total_amount', 'total_margin',
+    'margin_percentage', 'introduction', 'remark', 'internal_notes',
+    'notes', 'rounding_amount', 'quote_number',
+    'lexware_quotation_id', 'lexware_quote_number',
+  ]);
+
+  const cleanedQuoteData: Record<string, any> = {};
+  for (const [key, value] of Object.entries(quoteData)) {
+    if (ALLOWED_QUOTE_COLS.has(key)) {
+      cleanedQuoteData[key] = value;
+    }
+  }
+
   const admin = createAdminClient();
 
   try {
@@ -22,7 +40,7 @@ export async function POST(req: NextRequest) {
       // Update existing quote
       const { error: updateError } = await admin
         .from("wawi_quotes")
-        .update({ ...quoteData, updated_at: new Date().toISOString() })
+        .update({ ...cleanedQuoteData, updated_at: new Date().toISOString() })
         .eq("id", quoteId);
 
       if (updateError) {
@@ -35,7 +53,7 @@ export async function POST(req: NextRequest) {
       // Create new quote
       const { data: newQuote, error: insertError } = await admin
         .from("wawi_quotes")
-        .insert(quoteData)
+        .insert(cleanedQuoteData)
         .select("id")
         .single();
 
@@ -47,15 +65,25 @@ export async function POST(req: NextRequest) {
     }
 
     // Insert items
+    const ALLOWED_ITEM_COLS = new Set([
+      'product_id', 'product_name', 'product_description', 'sku',
+      'quantity', 'unit', 'purchase_price', 'unit_price',
+      'discount_percentage', 'total_price', 'tax_rate', 'tax_amount',
+      'margin_amount', 'margin_percentage', 'is_package_deal',
+    ]);
+
     if (savedQuoteId && items && items.length > 0) {
       const itemsWithQuoteId = items.map((item: any, i: number) => {
-        // Strip client-only fields
-        const { _id, id, ...rest } = item;
-        return {
-          ...rest,
+        const cleaned: Record<string, any> = {
           quote_id: savedQuoteId,
           position_number: i + 1,
         };
+        for (const [key, value] of Object.entries(item)) {
+          if (ALLOWED_ITEM_COLS.has(key)) {
+            cleaned[key] = value;
+          }
+        }
+        return cleaned;
       });
 
       const { error: itemsError } = await admin
