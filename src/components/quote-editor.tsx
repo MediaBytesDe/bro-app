@@ -17,6 +17,8 @@ import {
   FileText,
   ExternalLink,
   Save,
+  AlertCircle,
+  CheckCircle,
 } from "lucide-react";
 import type { Product } from "@/types/wawi";
 import {
