@@ -518,96 +518,48 @@ vielen Dank für Ihr Interesse an unseren Produkten. Gerne unterbreite ich Ihnen
       internal_notes: notes,
     };
 
-    let savedQuoteId = quoteId;
+    // Build items array
+    const itemsToSave = items.map((item) => ({
+      product_id: item.product_id,
+      product_name: item.product_name,
+      product_description: item.product_description,
+      sku: item.sku,
+      quantity: item.quantity,
+      unit: item.unit,
+      purchase_price: item.purchase_price,
+      unit_price: item.unit_price,
+      discount_percentage: isPackageDeal ? 0 : (item.discount_percentage || 0),
+      total_price: isPackageDeal ? item.quantity * item.unit_price : item.total_price,
+      tax_rate: item.tax_rate,
+      tax_amount: item.tax_amount || 0,
+      margin_amount: item.margin_amount || 0,
+      margin_percentage: item.margin_percentage || 0,
+      is_package_deal: false,
+    }));
 
-    if (quoteId) {
-      const { error: updateError } = await supabase
-        .from("wawi_quotes")
-        .update({ ...quoteData, updated_at: new Date().toISOString() })
-        .eq("id", quoteId);
-      
-      if (updateError) {
-        console.error("Error updating quote:", updateError);
-        setToastMessage({ type: "error", text: `Fehler beim Speichern: ${updateError.message}` });
+    try {
+      const res = await fetch("/api/quotes/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quoteId, quoteData, items: itemsToSave }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        console.error("Error saving quote:", result.error);
+        setToastMessage({ type: "error", text: `Fehler: ${result.error}` });
         setSaving(false);
         return;
       }
-      
-      await supabase.from("wawi_quote_items").delete().eq("quote_id", quoteId);
-    } else {
-      const { data: newQuote, error: insertError } = await supabase
-        .from("wawi_quotes")
-        .insert(quoteData)
-        .select("id")
-        .single();
-      
-      if (insertError) {
-        console.error("Error creating quote:", insertError);
-        setToastMessage({ type: "error", text: `Fehler beim Erstellen: ${insertError.message}` });
-        setSaving(false);
-        return;
-      }
-      
-      savedQuoteId = newQuote?.id;
+
+      setSaving(false);
+      router.push("/quotes");
+    } catch (err) {
+      console.error("Error saving quote:", err);
+      setToastMessage({ type: "error", text: `Fehler beim Speichern: ${String(err)}` });
+      setSaving(false);
     }
-
-    if (savedQuoteId && items.length > 0) {
-      let itemsToInsert: any[] = [];
-      
-      if (isPackageDeal) {
-        // Komplettpaket: Items mit originalen Preisen speichern
-        // Die 0€-Logik und das Komplettpaket-Item werden erst beim Lexware-Export generiert
-        itemsToInsert = items.map((item, i) => ({
-          quote_id: savedQuoteId,
-          product_id: item.product_id,
-          position_number: i + 1,
-          product_name: item.product_name,
-          product_description: item.product_description,
-          sku: item.sku,
-          quantity: item.quantity,
-          unit: item.unit,
-          purchase_price: item.purchase_price,
-          unit_price: item.unit_price, // Originaler Preis
-          discount_percentage: item.discount_percentage || 0,
-          total_price: item.quantity * item.unit_price, // Originaler Preis
-          tax_rate: item.tax_rate,
-          tax_amount: item.tax_amount || 0,
-          margin_amount: item.margin_amount || 0,
-          margin_percentage: item.margin_percentage || 0,
-          is_package_deal: false,
-        }));
-      } else {
-        // Normales Angebot: alle Positionen mit Einzelpreisen
-        itemsToInsert = items.map((item, i) => ({
-          quote_id: savedQuoteId,
-          product_id: item.product_id,
-          position_number: i + 1,
-          product_name: item.product_name,
-          product_description: item.product_description,
-          sku: item.sku,
-          quantity: item.quantity,
-          unit: item.unit,
-          purchase_price: item.purchase_price,
-          unit_price: item.unit_price,
-          discount_percentage: item.discount_percentage,
-          total_price: item.total_price,
-          tax_rate: item.tax_rate,
-          tax_amount: item.tax_amount,
-          margin_amount: item.margin_amount,
-          margin_percentage: item.margin_percentage,
-          is_package_deal: false,
-        }));
-      }
-
-      const { error: itemsError } = await supabase.from("wawi_quote_items").insert(itemsToInsert);
-      if (itemsError) {
-        console.error("Error saving items:", itemsError);
-        setToastMessage({ type: "error", text: `Fehler beim Speichern der Positionen: ${itemsError.message}` });
-      }
-    }
-
-    setSaving(false);
-    router.push("/quotes");
   }
 
   async function exportToLexware() {
