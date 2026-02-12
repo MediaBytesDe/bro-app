@@ -59,6 +59,7 @@ const desktopNav: NavItem[] = [
     children: [
       { id: "quotes", path: "/quotes", label: "Angebote", icon: FileSignature, description: "Angebote erstellen & verwalten" },
       { id: "articles", path: "/articles", label: "Artikel", icon: Package, description: "Produkte & Dienstleistungen" },
+      { id: "stock", path: "/articles/stock", label: "Lagerbestand", icon: Package, description: "Bestände & Warenbewegungen" },
       { id: "shopify-import", path: "/shopify-import", label: "Shopify Import", icon: Download, description: "Solarhandel24 Import" },
       { id: "wawi-import", path: "/wawi-import", label: "WAWI Import", icon: Database, description: "Altes WAWI System Import" },
     ]
