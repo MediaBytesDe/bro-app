@@ -215,11 +215,14 @@ export function LeadsTable() {
                         <span className="text-xs text-neutral-500 truncate max-w-[180px]">✉️ {lead.email}</span>
                       )}
                       {lead.source && <span className="text-xs text-neutral-600">📍 {lead.source}</span>}
-                      {getEmailStatusBadge(lead) && (
-                        <span className={`badge ${getEmailStatusBadge(lead)!.class} !py-0.5 !text-[10px]`}>
-                          {getEmailStatusBadge(lead)!.icon} {getEmailStatusBadge(lead)!.text}
-                        </span>
-                      )}
+                      {(() => {
+                        const emailBadge = getEmailStatusBadge(lead);
+                        return emailBadge ? (
+                          <span className={`badge ${emailBadge.class} !py-0.5 !text-[10px]`}>
+                            {emailBadge.icon} {emailBadge.text}
+                          </span>
+                        ) : null;
+                      })()}
                     </div>
                   </div>
 

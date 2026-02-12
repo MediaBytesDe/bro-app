@@ -79,29 +79,34 @@ export default function SubcontractorsPage() {
         .order("company_name");
 
       if (partnersData) {
-        // Get user counts for each partner
-        const partnersWithCounts = await Promise.all(
-          partnersData.map(async (p) => {
-            const { count: userCount } = await supabase
-              .from("partner_users")
-              .select("*", { count: "exact", head: true })
-              .eq("partner_id", p.id);
-            
-            const { count: jobCount } = await supabase
-              .from("partner_jobs")
-              .select("*", { count: "exact", head: true })
-              .eq("accepted_by_partner_id", p.id);
-
-            return {
-              ...p,
-              trades: p.trades || [],
-              _count: {
-                users: userCount || 0,
-                jobs: jobCount || 0,
-              },
-            };
-          })
-        );
+        // Batch load counts instead of N+1 queries
+        const partnerIds = partnersData.map(p => p.id);
+        
+        const [usersRes, jobsRes] = await Promise.all([
+          supabase.from("partner_users").select("partner_id").in("partner_id", partnerIds),
+          supabase.from("partner_jobs").select("accepted_by_partner_id").in("accepted_by_partner_id", partnerIds),
+        ]);
+        
+        // Count per partner
+        const userCounts: Record<string, number> = {};
+        const jobCounts: Record<string, number> = {};
+        (usersRes.data || []).forEach(u => {
+          userCounts[u.partner_id] = (userCounts[u.partner_id] || 0) + 1;
+        });
+        (jobsRes.data || []).forEach(j => {
+          if (j.accepted_by_partner_id) {
+            jobCounts[j.accepted_by_partner_id] = (jobCounts[j.accepted_by_partner_id] || 0) + 1;
+          }
+        });
+        
+        const partnersWithCounts = partnersData.map(p => ({
+          ...p,
+          trades: p.trades || [],
+          _count: {
+            users: userCounts[p.id] || 0,
+            jobs: jobCounts[p.id] || 0,
+          },
+        }));
         setPartners(partnersWithCounts);
       }
     } catch (err) {

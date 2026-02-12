@@ -139,36 +139,37 @@ export default function AdminNachrichtenPage() {
         .order("updated_at", { ascending: false });
 
       if (projectsData && projectsData.length > 0) {
-        // Format customer name und lade unread counts
-        const projectsWithCounts = await Promise.all(
-          projectsData.map(async (p: any) => {
-            const customerName =
-              p.customer?.company_name ||
-              `${p.customer?.first_name || ""} ${p.customer?.last_name || ""}`.trim();
+        // Batch load all non-brojekt messages for unread counts
+        const projectIds = projectsData.map((p: any) => p.id);
+        const { data: allMessages } = await supabase
+          .from("messages")
+          .select("project_id, read_by")
+          .in("project_id", projectIds)
+          .neq("sender_type", "brojekt");
 
-            // Lade Nachrichten für unread count
-            const { data: messages } = await supabase
-              .from("messages")
-              .select("read_by")
-              .eq("project_id", p.id)
-              .neq("sender_type", "brojekt");
+        // Count unread per project
+        const unreadByProject: Record<string, number> = {};
+        (allMessages || []).forEach((m: any) => {
+          const isUnread = !m.read_by?.some(
+            (r: any) => r.type === "profile" && r.id === profile.id
+          );
+          if (isUnread) {
+            unreadByProject[m.project_id] = (unreadByProject[m.project_id] || 0) + 1;
+          }
+        });
 
-            const unreadCount =
-              messages?.filter(
-                (m: any) =>
-                  !m.read_by.some(
-                    (r: any) => r.type === "profile" && r.id === profile.id
-                  )
-              ).length || 0;
+        const projectsWithCounts = projectsData.map((p: any) => {
+          const customerName =
+            p.customer?.company_name ||
+            `${p.customer?.first_name || ""} ${p.customer?.last_name || ""}`.trim();
 
-            return {
-              id: p.id,
-              name: p.name,
-              customer_name: customerName,
-              unread_count: unreadCount,
-            };
-          })
-        );
+          return {
+            id: p.id,
+            name: p.name,
+            customer_name: customerName,
+            unread_count: unreadByProject[p.id] || 0,
+          };
+        });
 
         setProjects(projectsWithCounts);
 

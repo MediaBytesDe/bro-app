@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Spinner } from "@/components/ui/spinner";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 export default function AppLayout({
   children,
@@ -33,5 +34,9 @@ export default function AppLayout({
 
   if (!user || isCustomer) return null;
 
-  return <AppShell user={user}>{children}</AppShell>;
+  return (
+    <AppShell>
+      <ErrorBoundary>{children}</ErrorBoundary>
+    </AppShell>
+  );
 }

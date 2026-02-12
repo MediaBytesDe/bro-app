@@ -79,16 +79,20 @@ export default function CalendarPage() {
     return { start, end };
   };
 
+  // Load trades only once on mount
+  const [tradesLoaded, setTradesLoaded] = useState(false);
+  
   useEffect(() => {
-    loadData();
-  }, [currentDate, viewMode]);
+    loadTradesFromDB(supabase, true).then(() => setTradesLoaded(true));
+  }, []);
+  
+  useEffect(() => {
+    if (tradesLoaded) loadData();
+  }, [currentDate, viewMode, tradesLoaded]);
 
   async function loadData() {
     setLoading(true);
     try {
-      // Trades aus DB laden (für Labels)
-      await loadTradesFromDB(supabase, true);
-      
       const { start, end } = getDateRange();
       const startStr = start.toISOString().split('T')[0];
       const endStr = end.toISOString().split('T')[0];

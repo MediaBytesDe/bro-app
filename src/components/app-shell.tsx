@@ -9,7 +9,6 @@ import {
   ClipboardList, MoreHorizontal, X, Package, ChevronDown,
   UserCircle, ShoppingCart, Briefcase, Settings, MessageSquare, Download, Database, Sparkles
 } from "lucide-react";
-import type { User as AuthUser } from "@supabase/supabase-js";
 import type { LucideIcon } from "lucide-react";
 
 // Einzelne Tabs (für Mobile)
@@ -95,7 +94,6 @@ const mobileMainTabs = allTabs.slice(0, 4);
 const mobileMoreTabs = allTabs.slice(4);
 
 interface AppShellProps {
-  user: AuthUser;
   children: React.ReactNode;
 }
 
