@@ -518,9 +518,9 @@ vielen Dank für Ihr Interesse an unseren Produkten. Gerne unterbreite ich Ihnen
       internal_notes: notes,
     };
 
-    // Build items array
+    // Build items array (strip _id - client-only field)
     const itemsToSave = items.map((item) => ({
-      product_id: item.product_id,
+      product_id: item.product_id || null,
       product_name: item.product_name,
       product_description: item.product_description,
       sku: item.sku,

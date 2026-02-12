@@ -48,11 +48,15 @@ export async function POST(req: NextRequest) {
 
     // Insert items
     if (savedQuoteId && items && items.length > 0) {
-      const itemsWithQuoteId = items.map((item: any, i: number) => ({
-        ...item,
-        quote_id: savedQuoteId,
-        position_number: i + 1,
-      }));
+      const itemsWithQuoteId = items.map((item: any, i: number) => {
+        // Strip client-only fields
+        const { _id, id, ...rest } = item;
+        return {
+          ...rest,
+          quote_id: savedQuoteId,
+          position_number: i + 1,
+        };
+      });
 
       const { error: itemsError } = await admin
         .from("wawi_quote_items")
