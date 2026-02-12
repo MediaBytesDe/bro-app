@@ -1,63 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
+import { usePortalProjects, usePortalOffers, usePortalAppointments } from "@/hooks/use-portal-data";
 import { useCustomerContext } from "@/hooks/use-customer-context";
-import { createClient } from "@/lib/supabase/client";
 import { Spinner } from "@/components/ui/spinner";
 import Link from "next/link";
 import { FolderOpen, FileText, Calendar, Clock, ArrowRight, Eye, X } from "lucide-react";
-import { formatDate } from "@/lib/utils";
 
 export default function CustomerPortalPage() {
-  const searchParams = useSearchParams();
-  const { customerId, customerName, isImpersonating, loading: customerLoading } = useCustomerContext();
-  const [loading, setLoading] = useState(true);
-  const [projects, setProjects] = useState<any[]>([]);
-  const [quotes, setQuotes] = useState<any[]>([]);
+  const { customerName, isImpersonating } = useCustomerContext();
+  const { projects, loading: projLoading } = usePortalProjects();
+  const { offers, loading: offLoading } = usePortalOffers();
+  const { appointments, loading: aptLoading } = usePortalAppointments();
 
-  const supabase = createClient();
+  const loading = projLoading || offLoading || aptLoading;
+  const impersonateQuery = isImpersonating ? `?impersonate=true` : "";
 
-  useEffect(() => {
-    if (!customerLoading && customerId) {
-      loadData();
-    } else if (!customerLoading && !customerId) {
-      setLoading(false);
-    }
-  }, [customerId, customerLoading]);
-
-  async function loadData() {
-    if (!customerId) { setLoading(false); return; }
-
-    try {
-      // Load projects for this customer
-      const { data: projectsData } = await supabase
-        .from("projects")
-        .select("id, name, slug, icon, workfolder_status, created_at")
-        .eq("customer_id", customerId)
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-      setProjects(projectsData || []);
-
-      // Load quotes for this customer
-      const { data: quotesData } = await supabase
-        .from("wawi_quotes")
-        .select("id, title, package_title, lexware_quote_number, status, total_amount, quote_date, lexware_quotation_id")
-        .eq("customer_id", customerId)
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-      setQuotes(quotesData || []);
-    } catch (err) {
-      console.error("Error loading portal:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (loading || customerLoading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Spinner />
@@ -65,21 +23,12 @@ export default function CustomerPortalPage() {
     );
   }
 
-  // No customer found
-  if (!customerId) {
-    return (
-      <div className="flex items-center justify-center h-64 text-neutral-400">
-        Kein Kundenkonto gefunden.
-      </div>
-    );
-  }
-
-  // Build impersonate query string for links
-  const impersonateQuery = isImpersonating ? `?impersonate=${customerId}` : "";
+  const pendingOffers = offers.filter(o => o.status === "pending");
+  const acceptedOffers = offers.filter(o => o.status === "accepted");
+  const upcomingAppointments = appointments.filter(a => new Date(a.date) > new Date());
 
   return (
     <div className="space-y-8">
-      {/* Admin Impersonation Banner */}
       {isImpersonating && (
         <div className="bg-blue-600/20 border border-blue-500/30 rounded-lg p-3 flex items-center justify-between">
           <div className="flex items-center gap-2 text-blue-400">
@@ -87,17 +36,12 @@ export default function CustomerPortalPage() {
             <span className="font-medium">Admin-Ansicht</span>
             <span className="text-blue-400/70">– Du siehst das Portal als: <strong>{customerName}</strong></span>
           </div>
-          <button
-            onClick={() => window.close()}
-            className="p-1 text-blue-400 hover:text-blue-300"
-            title="Fenster schließen"
-          >
+          <button onClick={() => window.close()} className="p-1 text-blue-400 hover:text-blue-300" title="Fenster schließen">
             <X className="w-5 h-5" />
           </button>
         </div>
       )}
 
-      {/* Welcome */}
       <div>
         <h1 className="text-2xl font-bold text-white">
           Willkommen{customerName ? `, ${customerName.split(" ")[0]}` : ""}!
@@ -107,12 +51,11 @@ export default function CustomerPortalPage() {
         </p>
       </div>
 
-      {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard icon={FolderOpen} label="Projekte" value={projects.length} color="orange" />
-        <StatCard icon={FileText} label="Angebote" value={quotes.length} color="blue" />
-        <StatCard icon={Clock} label="Offen" value={quotes.filter(q => q.status === "sent").length} color="yellow" />
-        <StatCard icon={Calendar} label="Angenommen" value={quotes.filter(q => q.status === "accepted").length} color="green" />
+        <StatCard icon={FileText} label="Angebote" value={offers.length} color="blue" />
+        <StatCard icon={Clock} label="Offen" value={pendingOffers.length} color="yellow" />
+        <StatCard icon={Calendar} label="Termine" value={upcomingAppointments.length} color="green" />
       </div>
 
       {/* Recent Projects */}
@@ -136,78 +79,85 @@ export default function CustomerPortalPage() {
           </div>
         ) : (
           <div className="grid gap-3">
-            {projects.map((project) => (
+            {projects.slice(0, 5).map((project) => (
               <Link
                 key={project.id}
-                href={`/portal/projekte/${project.slug}${impersonateQuery}`}
+                href={`/portal/projekte/${project.id}${impersonateQuery}`}
                 className="card p-4 flex items-center justify-between hover:bg-[#1a1a1a] transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">{project.icon || "📁"}</span>
+                  <span className="text-2xl">📁</span>
                   <div>
                     <h3 className="font-medium text-white">{project.name}</h3>
-                    <p className="text-xs text-neutral-500">{formatDate(project.created_at)}</p>
+                    <p className="text-xs text-neutral-500">
+                      {project.sizeKwp ? `${project.sizeKwp} kWp · ` : ""}
+                      {new Date(project.createdAt).toLocaleDateString("de-DE")}
+                    </p>
                   </div>
                 </div>
-                <StatusBadge status={project.workfolder_status} />
+                <ProjectStatusBadge status={project.status} />
               </Link>
             ))}
           </div>
         )}
       </section>
 
-      {/* Recent Quotes */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-            <FileText className="w-5 h-5 text-blue-400" />
-            Angebote
-          </h2>
-          {quotes.length > 0 && (
+      {/* Pending Offers */}
+      {pendingOffers.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+              <FileText className="w-5 h-5 text-yellow-400" />
+              Offene Angebote
+            </h2>
             <Link href={`/portal/angebote${impersonateQuery}`} className="text-sm text-[#fa432a] hover:underline flex items-center gap-1">
               Alle anzeigen <ArrowRight className="w-4 h-4" />
             </Link>
-          )}
-        </div>
-
-        {quotes.length === 0 ? (
-          <div className="card p-8 text-center">
-            <FileText className="w-12 h-12 mx-auto text-neutral-600 mb-3" />
-            <p className="text-neutral-400">Noch keine Angebote vorhanden</p>
           </div>
-        ) : (
           <div className="grid gap-3">
-            {quotes.map((quote) => (
-              <div key={quote.id} className="card p-4 flex items-center justify-between">
+            {pendingOffers.slice(0, 3).map((offer) => (
+              <div key={offer.id} className="card p-4 flex items-center justify-between">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono text-neutral-500">
-                      {quote.lexware_quote_number || `#${quote.id.slice(0, 6)}`}
-                    </span>
-                    <QuoteStatusBadge status={quote.status} />
-                  </div>
-                  <h3 className="font-medium text-white mt-1">
-                    {quote.package_title || quote.title}
-                  </h3>
+                  <span className="text-xs px-2 py-1 rounded bg-yellow-500/20 text-yellow-400">Offen</span>
+                  <h3 className="font-medium text-white mt-1">{offer.title}</h3>
                 </div>
-                <div className="text-right">
-                  <p className="font-bold text-white">
-                    {new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(quote.total_amount)}
+                <p className="font-bold text-white">
+                  {new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(offer.totalPrice)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Upcoming Appointments */}
+      {upcomingAppointments.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-green-400" />
+              Nächste Termine
+            </h2>
+          </div>
+          <div className="grid gap-3">
+            {upcomingAppointments.slice(0, 3).map((apt) => (
+              <div key={apt.id} className="card p-4 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-green-500/20 text-green-400 flex flex-col items-center justify-center text-xs font-semibold">
+                  <span>{new Date(apt.date).toLocaleDateString("de-DE", { day: "2-digit" })}</span>
+                  <span className="text-[10px]">{new Date(apt.date).toLocaleDateString("de-DE", { month: "short" })}</span>
+                </div>
+                <div>
+                  <h3 className="font-medium text-white">{apt.title}</h3>
+                  <p className="text-xs text-neutral-500">
+                    {new Date(apt.date).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr
+                    {apt.location ? ` · 📍 ${apt.location}` : ""}
                   </p>
-                  {quote.lexware_quotation_id && (
-                    <button
-                      onClick={() => window.open(`/api/lexware/quote-pdf?lexwareId=${quote.lexware_quotation_id}`, "_blank")}
-                      className="text-xs text-[#fa432a] hover:underline mt-1"
-                    >
-                      PDF anzeigen
-                    </button>
-                  )}
                 </div>
               </div>
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   );
 }
@@ -229,38 +179,16 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any; label: strin
   );
 }
 
-function StatusBadge({ status }: { status: string | null }) {
+function ProjectStatusBadge({ status }: { status: string }) {
   const statusMap: Record<string, { label: string; class: string }> = {
-    "1. Neu": { label: "Neu", class: "bg-blue-500/20 text-blue-400" },
-    "2. In Planung": { label: "In Planung", class: "bg-yellow-500/20 text-yellow-400" },
-    "3. Material bestellt": { label: "Material bestellt", class: "bg-orange-500/20 text-orange-400" },
-    "4. Montage geplant": { label: "Montage geplant", class: "bg-purple-500/20 text-purple-400" },
-    "5. In Montage": { label: "In Montage", class: "bg-cyan-500/20 text-cyan-400" },
-    "6. Abgeschlossen": { label: "Abgeschlossen", class: "bg-green-500/20 text-green-400" },
-  };
-
-  const info = statusMap[status || ""] || { label: status || "Offen", class: "bg-neutral-500/20 text-neutral-400" };
-
-  return (
-    <span className={`text-xs px-2 py-1 rounded ${info.class}`}>
-      {info.label}
-    </span>
-  );
-}
-
-function QuoteStatusBadge({ status }: { status: string }) {
-  const statusMap: Record<string, { label: string; class: string }> = {
-    draft: { label: "Entwurf", class: "bg-neutral-500/20 text-neutral-400" },
-    sent: { label: "Versendet", class: "bg-yellow-500/20 text-yellow-400" },
-    accepted: { label: "Angenommen", class: "bg-green-500/20 text-green-400" },
-    rejected: { label: "Abgelehnt", class: "bg-red-500/20 text-red-400" },
+    angebot: { label: "Angebot", class: "bg-blue-500/20 text-blue-400" },
+    auftrag: { label: "Auftrag", class: "bg-yellow-500/20 text-yellow-400" },
+    material: { label: "Material", class: "bg-orange-500/20 text-orange-400" },
+    montage: { label: "Montage", class: "bg-purple-500/20 text-purple-400" },
+    abnahme: { label: "Abnahme", class: "bg-cyan-500/20 text-cyan-400" },
+    fertig: { label: "Fertig", class: "bg-green-500/20 text-green-400" },
   };
 
   const info = statusMap[status] || { label: status, class: "bg-neutral-500/20 text-neutral-400" };
-
-  return (
-    <span className={`text-xs px-2 py-1 rounded ${info.class}`}>
-      {info.label}
-    </span>
-  );
+  return <span className={`text-xs px-2 py-1 rounded ${info.class}`}>{info.label}</span>;
 }

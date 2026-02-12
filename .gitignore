@@ -44,3 +44,4 @@ yarn-error.log*
 next-env.d.ts
 *.coolify-backup
 .env*.backup
+dist/
