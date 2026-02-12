@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       // Create new quote
       const { data: newQuote, error: insertError } = await admin
         .from("wawi_quotes")
-        .insert({ ...quoteData, created_by: user.id })
+        .insert(quoteData)
         .select("id")
         .single();
 
