@@ -14,7 +14,9 @@ import {
   Building2,
   ListTodo,
   Bell,
-  CalendarClock
+  CalendarClock,
+  Package,
+  CalendarDays
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -118,6 +120,8 @@ export function PartnerShell({ partner, partnerUser, children }: Props) {
     { href: "/partner/aufgaben", icon: ListTodo, label: "Aufgaben" },
     { href: "/partner/termin-anfragen", icon: CalendarClock, label: "Termin-Anfragen", badge: pendingRequests },
     { href: "/partner/kalender", icon: Calendar, label: "Kalender" },
+    { href: "/partner/verfuegbarkeit", icon: CalendarDays, label: "Verfügbarkeit" },
+    { href: "/partner/material", icon: Package, label: "Material" },
     ...(isAdmin ? [{ href: "/partner/rechnungen", icon: FileText, label: "Rechnungen" }] : []),
     ...(isAdmin ? [{ href: "/partner/team", icon: Users, label: "Team" }] : []),
     ...(isAdmin ? [{ href: "/partner/einstellungen", icon: Settings, label: "Einstellungen" }] : []),

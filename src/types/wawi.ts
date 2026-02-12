@@ -72,6 +72,11 @@ export type WawiQuote = {
   footer_text: string | null;
   notes: string | null;
   internal_notes: string | null;
+  // Status tracking timestamps
+  sent_at: string | null;
+  viewed_at: string | null;
+  accepted_at: string | null;
+  rejected_at: string | null;
   // Joins
   customer?: {
     id: string;

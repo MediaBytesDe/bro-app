@@ -20,6 +20,8 @@ import {
   FileStack,
   Trash2,
   FileText,
+  Eye,
+  RefreshCw,
 } from "lucide-react";
 import {
   WawiQuote,
@@ -48,6 +50,7 @@ export function QuotesList() {
   const [rejectedCollapsed, setRejectedCollapsed] = useState(true);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   const router = useRouter();
   const supabase = createClient();
@@ -108,11 +111,46 @@ export function QuotesList() {
   }
 
   async function updateStatus(id: string, status: string) {
+    const now = new Date().toISOString();
+    const updates: Record<string, any> = { 
+      status, 
+      updated_at: now,
+    };
+    
+    // Auto-track status timestamps
+    switch (status) {
+      case "sent":
+      case "sent_to_lexware":
+        updates.sent_at = now;
+        break;
+      case "accepted":
+        updates.accepted_at = now;
+        break;
+      case "rejected":
+        updates.rejected_at = now;
+        break;
+    }
+    
     await supabase
       .from("wawi_quotes")
-      .update({ status, updated_at: new Date().toISOString() })
+      .update(updates)
       .eq("id", id);
     loadQuotes();
+  }
+
+  async function syncLexwareStatus() {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/lexware/sync-quote-status", { method: "POST" });
+      const data = await res.json();
+      if (data.synced > 0) {
+        loadQuotes();
+      }
+    } catch (err) {
+      console.error("Sync error:", err);
+    } finally {
+      setSyncing(false);
+    }
   }
 
   function openPdfModal(lexwareId: string) {
@@ -164,6 +202,15 @@ export function QuotesList() {
           <p className="text-sm text-neutral-500">{quotes.length} Angebote</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={syncLexwareStatus}
+            disabled={syncing}
+            className="flex items-center gap-2 px-3 py-2 bg-[#111] border border-[#1a1a1a] rounded-xl text-neutral-400 hover:text-white hover:border-[#333] transition-colors disabled:opacity-50"
+            title="Lexware-Status synchronisieren"
+          >
+            <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
+            <span className="text-sm hidden md:inline">Sync</span>
+          </button>
           <button
             onClick={() => router.push("/quotes/templates")}
             className="flex items-center gap-2 px-3 py-2 bg-[#111] border border-[#1a1a1a] rounded-xl text-neutral-400 hover:text-white hover:border-[#333] transition-colors"
@@ -370,6 +417,9 @@ function QuoteCard({ quote, index, onClick, onDelete, onStatusChange, onOpenPdf 
   const colors = statusColors[quote.status] || statusColors.draft;
   const isExported = !!(quote as any).lexware_quotation_id;
   const lexwareNumber = (quote as any).lexware_quote_number;
+  const isViewed = !!(quote as any).viewed_at;
+  const sentAt = (quote as any).sent_at;
+  const acceptedAt = (quote as any).accepted_at;
 
   const customerName = quote.customer 
     ? (quote.customer.company_name || `${quote.customer.first_name || ""} ${quote.customer.last_name || ""}`.trim() || "Unbenannt")
@@ -413,6 +463,11 @@ function QuoteCard({ quote, index, onClick, onDelete, onStatusChange, onOpenPdf 
               >
                 {statusInfo.label}
               </button>
+              {isViewed && (
+                <span className="text-[10px] text-purple-400 flex items-center gap-0.5" title={`Angesehen: ${new Date((quote as any).viewed_at).toLocaleString("de-DE")}`}>
+                  <Eye className="w-3 h-3" />
+                </span>
+              )}
               <span className="text-xs text-neutral-600">
                 {new Date(quote.quote_date).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
               </span>

@@ -1,16 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { generateQuotePDF } from '@/lib/pdf/quote-pdf';
-import type { Quote, QuoteLineItem, Customer } from '@/types/database';
-
-// Extended Quote type with additional PDF-specific fields
-interface QuoteWithPDFFields extends Quote {
-  payment_terms: string | null;
-  introduction: string | null;
-  total_net: number | null;
-  total_tax: number | null;
-  total_gross: number | null;
-}
+import type { QuoteLineItem, Customer } from '@/types/database';
 
 export async function POST(request: NextRequest) {
   try {
@@ -80,26 +71,18 @@ export async function POST(request: NextRequest) {
       .eq('quote_id', quoteId)
       .order('position_number', { ascending: true });
 
-    // Transform wawi_quotes data to match Quote type expected by PDF generator
-    const quote: QuoteWithPDFFields = {
-      id: wawiQuote.id,
-      customer_id: wawiQuote.customer_id || '',
-      project_id: wawiQuote.project_id,
-      lead_id: wawiQuote.lead_id,
-      lexware_quote_id: wawiQuote.lexware_quotation_id,
-      lexware_sync_at: null,
+    // Transform wawi_quotes data for PDF generator
+    const quote = {
       quote_number: wawiQuote.quote_number || '',
       title: wawiQuote.title || 'Angebot',
-      description: wawiQuote.introduction_text,
-      status: wawiQuote.status === 'draft' ? 'draft' :
-              wawiQuote.status === 'sent' ? 'sent' :
-              wawiQuote.status === 'accepted' ? 'accepted' : 'draft',
-      net_amount: wawiQuote.subtotal,
+      created_at: wawiQuote.created_at,
+      valid_until: wawiQuote.valid_until,
       tax_rate: wawiQuote.tax_rate,
-      tax_amount: wawiQuote.tax_amount,
-      gross_amount: wawiQuote.total_amount,
-      discount_percent: wawiQuote.discount_percentage,
-      discount_amount: wawiQuote.discount_amount,
+      introduction: wawiQuote.introduction_text,
+      payment_terms: wawiQuote.footer_text,
+      total_net: wawiQuote.subtotal,
+      total_tax: wawiQuote.tax_amount,
+      total_gross: wawiQuote.total_amount,
       line_items: (items || []).map((item): QuoteLineItem => ({
         id: item.id,
         position: item.position_number,
@@ -109,23 +92,6 @@ export async function POST(request: NextRequest) {
         unit_price: item.unit_price,
         total_price: item.total_price,
       })),
-      valid_until: wawiQuote.valid_until,
-      sent_at: null,
-      viewed_at: null,
-      accepted_at: null,
-      rejected_at: null,
-      pdf_url: null,
-      pdf_generated_at: null,
-      internal_notes: wawiQuote.internal_notes,
-      customer_notes: wawiQuote.notes,
-      payment_terms: wawiQuote.footer_text,
-      introduction: wawiQuote.introduction_text,
-      created_by: null,
-      created_at: wawiQuote.created_at,
-      updated_at: wawiQuote.updated_at,
-      total_net: wawiQuote.subtotal,
-      total_tax: wawiQuote.tax_amount,
-      total_gross: wawiQuote.total_amount,
     };
 
     // Generate PDF using existing jsPDF logic
