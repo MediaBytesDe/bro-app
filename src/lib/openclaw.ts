@@ -1,121 +1,28 @@
-type OpenClawMessage = {
-  type: string;
-  id?: string;
-  method?: string;
-  params?: Record<string, unknown>;
-  content?: string;
-  event?: string;
-  payload?: any;
-  ok?: boolean;
-  error?: { message?: string };
-};
-
+/**
+ * OpenClaw Client - HTTP API based
+ *
+ * Uses the Gateway's /tools/invoke HTTP API with sessions_send tool.
+ * This is simpler and more reliable than the WebSocket approach,
+ * as it doesn't require device pairing for operator.write scope.
+ */
 export class OpenClawClient {
-  private ws: WebSocket | null = null;
-  private connected = false;
-  private messageQueue: Map<string, {
-    resolve: (value: string) => void;
-    content: string;
-  }> = new Map();
+  private baseUrl: string;
+  private password: string;
 
   constructor(
-    private url = process.env.OPENCLAW_URL || 'ws://localhost:18789/ws',
-    private password = process.env.OPENCLAW_PASSWORD || 'BROjekt-2026!'
-  ) {}
-
-  async connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(this.url);
-
-      this.ws.onopen = () => {
-        // Wait for connect.challenge event
-      };
-
-      this.ws.onmessage = (e) => {
-        const data = JSON.parse(e.data);
-
-        // Server sends challenge → we respond with connect
-        if (data.type === 'event' && data.event === 'connect.challenge') {
-          this.ws!.send(JSON.stringify({
-            type: 'req',
-            id: 'connect-1',
-            method: 'connect',
-            params: {
-              minProtocol: 3,
-              maxProtocol: 3,
-              client: {
-                id: 'gateway-client',
-                version: '1.0.0',
-                platform: 'nodejs',
-                mode: 'backend'
-              },
-              role: 'operator',
-              scopes: ['operator.read', 'operator.write'],
-              auth: { password: this.password }
-            }
-          }));
-          return;
-        }
-
-        // Connect response
-        if (data.type === 'res' && data.id === 'connect-1') {
-          if (data.ok) {
-            this.connected = true;
-            resolve();
-          } else {
-            reject(new Error(data.error?.message || 'Connect failed'));
-          }
-          return;
-        }
-
-        this.handleMessage(data);
-      };
-
-      this.ws.onerror = reject;
-      this.ws.onclose = (e) => {
-        this.connected = false;
-        if (!this.connected) {
-          reject(new Error(`Connection closed: ${e.reason || e.code}`));
-        }
-      };
-    });
+    url = process.env.OPENCLAW_URL || 'ws://localhost:18789/ws',
+    password = process.env.OPENCLAW_PASSWORD || 'BROjekt-2026!'
+  ) {
+    // Convert WebSocket URL to HTTP URL for the tools/invoke API
+    this.baseUrl = url
+      .replace(/^wss:\/\//, 'https://')
+      .replace(/^ws:\/\//, 'http://')
+      .replace(/\/ws\/?$/, '');
+    this.password = password;
   }
 
-  private handleMessage(data: OpenClawMessage) {
-    // Chat response events (streaming content)
-    if (data.type === 'event' && data.event === 'chat') {
-      const payload = data.payload as any;
-      const runId = payload?.runId;
-      if (runId && this.messageQueue.has(runId)) {
-        const pending = this.messageQueue.get(runId)!;
-        // Streaming delta - OpenClaw sends COMPLETE text up to this point, not deltas!
-        if (payload.state === 'delta' && payload.message) {
-          // Parse Anthropic Messages API format
-          const message = payload.message;
-          if (typeof message === 'object' && message.content && Array.isArray(message.content)) {
-            // Extract text from content blocks - OVERWRITE (not append!)
-            pending.content = message.content
-              .filter((block: any) => block.type === 'text')
-              .map((block: any) => block.text)
-              .join('');
-          } else if (typeof message === 'string') {
-            // Fallback for plain string format - OVERWRITE (not append!)
-            pending.content = message;
-          }
-        }
-        // Final state
-        if (payload.state === 'final') {
-          console.log('[OpenClaw] Stream completed, total length:', pending.content.length);
-          pending.resolve(pending.content);
-          this.messageQueue.delete(runId);
-        }
-      }
-    }
-
-    // Response to chat.send
-    if (data.type === 'res' && data.id) {
-      // chat.send returns runId, we track with it
-    }
+  async connect(): Promise<void> {
+    // No-op: HTTP API doesn't need a persistent connection
   }
 
   /**
@@ -125,41 +32,65 @@ export class OpenClawClient {
    * @returns Die Agent-Antwort als String
    */
   async ask(message: string, sessionKey = 'agent:main:main'): Promise<string> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.connected) {
-      await this.connect();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 180000); // 3 min timeout
+
+    try {
+      const res = await fetch(`${this.baseUrl}/tools/invoke`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.password}`,
+        },
+        body: JSON.stringify({
+          tool: 'sessions_send',
+          args: {
+            message,
+            sessionKey,
+          },
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errorBody = await res.text();
+        throw new Error(`OpenClaw API error (${res.status}): ${errorBody}`);
+      }
+
+      const data = await res.json();
+
+      if (!data.ok) {
+        throw new Error(data.error?.message || 'OpenClaw request failed');
+      }
+
+      // Extract reply from the response
+      const details = data.result?.details;
+      if (details?.reply) {
+        return details.reply;
+      }
+
+      // Fallback: try to extract from content blocks
+      const content = data.result?.content;
+      if (Array.isArray(content)) {
+        const textContent = content
+          .filter((block: any) => block.type === 'text')
+          .map((block: any) => {
+            // The text field may contain JSON with the actual reply
+            try {
+              const parsed = JSON.parse(block.text);
+              return parsed.reply || block.text;
+            } catch {
+              return block.text;
+            }
+          })
+          .join('');
+        return textContent;
+      }
+
+      throw new Error('No response content from OpenClaw');
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const reqId = crypto.randomUUID();
-    const runId = crypto.randomUUID(); // idempotencyKey becomes runId
-
-    return new Promise((resolve, reject) => {
-      // Register with runId for chat events
-      this.messageQueue.set(runId, { resolve, content: '' });
-
-      // Timeout after 180 seconds (3 minutes for complex content generation)
-      const timeout = setTimeout(() => {
-        this.messageQueue.delete(runId);
-        reject(new Error('Request timeout after 3 minutes'));
-      }, 180000);
-
-      const originalResolve = this.messageQueue.get(runId)!.resolve;
-      this.messageQueue.get(runId)!.resolve = (value) => {
-        clearTimeout(timeout);
-        originalResolve(value);
-      };
-
-      this.ws!.send(JSON.stringify({
-        type: 'req',
-        id: reqId,
-        method: 'chat.send',
-        params: {
-          message,
-          sessionKey,
-          idempotencyKey: runId,
-          deliver: false // Don't send to channel
-        }
-      }));
-    });
   }
 
   /**
@@ -182,8 +113,7 @@ export class OpenClawClient {
   }
 
   disconnect() {
-    this.ws?.close();
-    this.ws = null;
+    // No-op: HTTP API doesn't need cleanup
   }
 }
 
