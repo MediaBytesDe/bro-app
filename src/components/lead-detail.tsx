@@ -55,6 +55,14 @@ export function LeadDetail({ leadId }: Props) {
 
   useEffect(() => {
     loadLead();
+    // Safety timeout: force loading off if query hangs
+    const timeout = setTimeout(() => {
+      setLoading((v) => {
+        if (v) console.warn("Lead detail safety timeout: forcing loading to false");
+        return false;
+      });
+    }, 10000);
+    return () => clearTimeout(timeout);
   }, [leadId]);
 
   async function loadLead() {

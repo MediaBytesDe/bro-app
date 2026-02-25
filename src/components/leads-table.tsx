@@ -66,6 +66,14 @@ export function LeadsTable() {
 
   useEffect(() => {
     loadLeads();
+    // Safety timeout: force loading off if query hangs
+    const timeout = setTimeout(() => {
+      setLoading((v) => {
+        if (v) console.warn("Leads table safety timeout: forcing loading to false");
+        return false;
+      });
+    }, 10000);
+    return () => clearTimeout(timeout);
   }, []);
 
   async function loadLeads() {
