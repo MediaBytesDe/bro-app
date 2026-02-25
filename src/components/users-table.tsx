@@ -31,9 +31,14 @@ export function UsersTable() {
 
   async function loadUsers() {
     setLoading(true);
-    const { data } = await supabase.from("users").select("*").order("created_at");
-    setUsers(data || []);
-    setLoading(false);
+    try {
+      const { data } = await supabase.from("users").select("*").order("created_at");
+      setUsers(data || []);
+    } catch (err) {
+      console.error("Users load error:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function openNew() {

@@ -50,28 +50,24 @@ export function Dashboard() {
 
   async function loadData() {
     setLoading(true);
-    
-    // Get user directly from supabase instead of AuthProvider
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-    
-    const { data: profileData } = await supabase
-      .from("users")
-      .select("id, display_name")
-      .eq("auth_id", user.id)
-      .single();
-    
-    if (profileData) {
-      setDisplayName(profileData.display_name || "");
-      setUserId(profileData.id);
-    } else {
-      setLoading(false);
-      return;
-    }
     try {
+      // Get user directly from supabase instead of AuthProvider
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profileData } = await supabase
+        .from("users")
+        .select("id, display_name")
+        .eq("auth_id", user.id)
+        .single();
+
+      if (profileData) {
+        setDisplayName(profileData.display_name || "");
+        setUserId(profileData.id);
+      } else {
+        return;
+      }
+
       const now = new Date();
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
       const endOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7).toISOString();
@@ -85,31 +81,24 @@ export function Dashboard() {
         customersCountRes,
         weekAppointmentsRes,
       ] = await Promise.all([
-        // Neue Leads
         supabase
           .from("leads")
           .select("*")
           .in("status", ["new", "contacted", "qualified"])
           .order("created_at", { ascending: false })
           .limit(8),
-
-        // Projekte/Marken
         supabase
           .from("projects")
           .select("*")
           .is("parent_id", null)
           .order("sort_order")
           .limit(6),
-
-        // Offene Angebote (nicht abgeschlossen)
         supabase
           .from("wawi_quotes")
           .select("id, title, quote_number, status, total_amount, quote_date, customer:customers(first_name, last_name, company_name)")
           .not("status", "in", '("accepted","rejected","expired")')
           .order("created_at", { ascending: false })
           .limit(10),
-
-        // Stats
         supabase.from("leads").select("*", { count: "exact", head: true }).not("status", "in", '("won","lost")'),
         supabase.from("wawi_quotes").select("*", { count: "exact", head: true }).not("status", "in", '("accepted","rejected","expired")'),
         supabase.from("customers").select("*", { count: "exact", head: true }),
@@ -129,8 +118,9 @@ export function Dashboard() {
       });
     } catch (e) {
       console.error("Dashboard load error:", e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   const getGreeting = () => {

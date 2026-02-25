@@ -85,52 +85,55 @@ export function CustomerDetail({ customerId }: Props) {
 
   async function loadCustomer() {
     setLoading(true);
-    
-    // Load customer
-    const { data: customerData } = await supabase
-      .from("customers")
-      .select("*")
-      .eq("id", customerId)
-      .single();
-    
-    if (customerData) {
-      setCustomer(customerData);
-      setEditForm({
-        company_name: customerData.company_name || "",
-        first_name: customerData.first_name || "",
-        last_name: customerData.last_name || "",
-        email: customerData.email || "",
-        phone: customerData.phone || "",
-        mobile: customerData.mobile || "",
-        street: customerData.street || "",
-        zip: customerData.zip || "",
-        city: customerData.city || "",
-        country: customerData.country || "Deutschland",
-        customer_type: customerData.customer_type || "private",
-        status: customerData.status || "active",
-        notes: customerData.notes || "",
-        tax_id: customerData.tax_id || "",
-        vat_id: customerData.vat_id || "",
-      });
-
-      // Load quotes for this customer
-      const { data: quotesData } = await supabase
-        .from("quotes")
+    try {
+      // Load customer
+      const { data: customerData } = await supabase
+        .from("customers")
         .select("*")
-        .eq("customer_id", customerId)
-        .order("created_at", { ascending: false });
-      setQuotes(quotesData || []);
+        .eq("id", customerId)
+        .single();
 
-      // Load projects for this customer
-      const { data: projectsData } = await supabase
-        .from("projects")
-        .select("*")
-        .eq("customer_id", customerId)
-        .order("created_at", { ascending: false });
-      setProjects(projectsData || []);
+      if (customerData) {
+        setCustomer(customerData);
+        setEditForm({
+          company_name: customerData.company_name || "",
+          first_name: customerData.first_name || "",
+          last_name: customerData.last_name || "",
+          email: customerData.email || "",
+          phone: customerData.phone || "",
+          mobile: customerData.mobile || "",
+          street: customerData.street || "",
+          zip: customerData.zip || "",
+          city: customerData.city || "",
+          country: customerData.country || "Deutschland",
+          customer_type: customerData.customer_type || "private",
+          status: customerData.status || "active",
+          notes: customerData.notes || "",
+          tax_id: customerData.tax_id || "",
+          vat_id: customerData.vat_id || "",
+        });
+
+        // Load quotes for this customer
+        const { data: quotesData } = await supabase
+          .from("quotes")
+          .select("*")
+          .eq("customer_id", customerId)
+          .order("created_at", { ascending: false });
+        setQuotes(quotesData || []);
+
+        // Load projects for this customer
+        const { data: projectsData } = await supabase
+          .from("projects")
+          .select("*")
+          .eq("customer_id", customerId)
+          .order("created_at", { ascending: false });
+        setProjects(projectsData || []);
+      }
+    } catch (err) {
+      console.error("Customer load error:", err);
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   }
 
   async function saveCustomer(e: React.FormEvent) {

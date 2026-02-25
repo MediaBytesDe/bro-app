@@ -52,13 +52,18 @@ export function StockOverview() {
 
   async function loadProducts() {
     setLoading(true);
-    const { data } = await supabase
-      .from("products")
-      .select("*")
-      .eq("status", "active")
-      .order("name");
-    setProducts(data || []);
-    setLoading(false);
+    try {
+      const { data } = await supabase
+        .from("products")
+        .select("*")
+        .eq("status", "active")
+        .order("name");
+      setProducts(data || []);
+    } catch (err) {
+      console.error("Stock load error:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const filteredProducts = products.filter((p) => {

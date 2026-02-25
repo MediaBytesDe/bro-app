@@ -77,29 +77,32 @@ export function WorkfolderList({ brand }: Props) {
 
   async function loadData() {
     setLoading(true);
+    try {
+      const { data: wf } = await supabase
+        .from("projects")
+        .select("*, customer:customers(*)")
+        .eq("parent_id", brand.id)
+        .order("created_at", { ascending: false });
+      setWorkfolders(wf || []);
 
-    const { data: wf } = await supabase
-      .from("projects")
-      .select("*, customer:customers(*)")
-      .eq("parent_id", brand.id)
-      .order("created_at", { ascending: false });
-    setWorkfolders(wf || []);
+      const { data: custs } = await supabase
+        .from("customers")
+        .select("id, company_name, first_name, last_name")
+        .eq("status", "active")
+        .order("company_name");
+      setCustomers(custs || []);
 
-    const { data: custs } = await supabase
-      .from("customers")
-      .select("id, company_name, first_name, last_name")
-      .eq("status", "active")
-      .order("company_name");
-    setCustomers(custs || []);
-
-    const { data: legacyTasks } = await supabase
-      .from("tasks")
-      .select("*")
-      .eq("project_id", brand.id)
-      .order("created_at", { ascending: false });
-    setTasks(legacyTasks || []);
-
-    setLoading(false);
+      const { data: legacyTasks } = await supabase
+        .from("tasks")
+        .select("*")
+        .eq("project_id", brand.id)
+        .order("created_at", { ascending: false });
+      setTasks(legacyTasks || []);
+    } catch (err) {
+      console.error("Workfolder list load error:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function toggleTaskStatus(task: Task) {

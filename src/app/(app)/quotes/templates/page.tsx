@@ -220,12 +220,17 @@ function CategoriesEditor({
 
   async function loadCategories() {
     setLoading(true);
-    const { data } = await supabase
-      .from("quote_template_categories")
-      .select("*")
-      .order("sort_order");
-    setItems(data || []);
-    setLoading(false);
+    try {
+      const { data } = await supabase
+        .from("quote_template_categories")
+        .select("*")
+        .order("sort_order");
+      setItems(data || []);
+    } catch (err) {
+      console.error("Categories load error:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function addCategory() {

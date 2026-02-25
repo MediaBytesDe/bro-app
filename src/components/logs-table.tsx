@@ -52,15 +52,20 @@ export function LogsTable() {
 
   async function loadLogs() {
     setLoading(true);
-    let query = supabase.from("logs").select("*").order("created_at", { ascending: false }).limit(50);
+    try {
+      let query = supabase.from("logs").select("*").order("created_at", { ascending: false }).limit(50);
 
-    if (typeFilter !== "all") {
-      query = query.eq("type", typeFilter);
+      if (typeFilter !== "all") {
+        query = query.eq("type", typeFilter);
+      }
+
+      const { data } = await query;
+      setLogs(data || []);
+    } catch (err) {
+      console.error("Logs load error:", err);
+    } finally {
+      setLoading(false);
     }
-
-    const { data } = await query;
-    setLogs(data || []);
-    setLoading(false);
   }
 
   return (

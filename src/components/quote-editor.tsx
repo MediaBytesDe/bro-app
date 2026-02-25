@@ -215,80 +215,83 @@ vielen Dank für Ihr Interesse an unseren Produkten. Gerne unterbreite ich Ihnen
 
   async function loadData() {
     setLoading(true);
-    
-    // Load Products
-    const { data: prods } = await supabase
-      .from("products")
-      .select("*")
-      .eq("status", "active")
-      .order("name");
-    setProducts(prods || []);
-
-    // Load Customers
-    const { data: custs } = await supabase
-      .from("customers")
-      .select("id, company_name, first_name, last_name")
-      .order("company_name");
-    setCustomers(custs || []);
-    
-    // Load Projects
-    const { data: projs } = await supabase
-      .from("projects")
-      .select("id, name, customer_id")
-      .order("name");
-    setProjects(projs || []);
-    
-    // Load Templates
-    const { data: templs } = await supabase
-      .from("quote_templates")
-      .select("*")
-      .eq("is_active", true)
-      .order("sort_order");
-    setTemplates(templs || []);
-
-    // Load existing quote if editing
-    if (quoteId) {
-      const { data: quote } = await supabase
-        .from("wawi_quotes")
+    try {
+      // Load Products
+      const { data: prods } = await supabase
+        .from("products")
         .select("*")
-        .eq("id", quoteId)
-        .single();
+        .eq("status", "active")
+        .order("name");
+      setProducts(prods || []);
 
-      if (quote) {
-        setCustomerId(quote.customer_id);
-        setProjectId(quote.project_id || null);
-        setTitle(quote.title || "Angebot");
-        setQuoteDate(quote.quote_date);
-        setValidUntil(quote.valid_until || "");
-        setTaxType(quote.tax_type || "pv");
-        setIsPackageDeal(quote.is_package_deal || false);
-        setPackageTitle(quote.package_title || "");
-        setLexwareId(quote.lexware_quotation_id || null);
-        setLexwareNumber(quote.lexware_quote_number || null);
-        setGlobalDiscount(quote.discount_percentage || 0);
-        setIntroText(quote.introduction || "");
-        setFooterText(quote.remark || getDefaultFooter(senderName));
-        setNotes(quote.internal_notes || "");
+      // Load Customers
+      const { data: custs } = await supabase
+        .from("customers")
+        .select("id, company_name, first_name, last_name")
+        .order("company_name");
+      setCustomers(custs || []);
 
-        const { data: quoteItems } = await supabase
-          .from("wawi_quote_items")
+      // Load Projects
+      const { data: projs } = await supabase
+        .from("projects")
+        .select("id, name, customer_id")
+        .order("name");
+      setProjects(projs || []);
+
+      // Load Templates
+      const { data: templs } = await supabase
+        .from("quote_templates")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order");
+      setTemplates(templs || []);
+
+      // Load existing quote if editing
+      if (quoteId) {
+        const { data: quote } = await supabase
+          .from("wawi_quotes")
           .select("*")
-          .eq("quote_id", quoteId)
-          .order("position_number");
+          .eq("id", quoteId)
+          .single();
 
-        setItems(quoteItems?.map((item, i) => ({
-          ...item,
-          _id: `item-${i}-${Date.now()}`,
-        })) || []);
+        if (quote) {
+          setCustomerId(quote.customer_id);
+          setProjectId(quote.project_id || null);
+          setTitle(quote.title || "Angebot");
+          setQuoteDate(quote.quote_date);
+          setValidUntil(quote.valid_until || "");
+          setTaxType(quote.tax_type || "pv");
+          setIsPackageDeal(quote.is_package_deal || false);
+          setPackageTitle(quote.package_title || "");
+          setLexwareId(quote.lexware_quotation_id || null);
+          setLexwareNumber(quote.lexware_quote_number || null);
+          setGlobalDiscount(quote.discount_percentage || 0);
+          setIntroText(quote.introduction || "");
+          setFooterText(quote.remark || getDefaultFooter(senderName));
+          setNotes(quote.internal_notes || "");
+
+          const { data: quoteItems } = await supabase
+            .from("wawi_quote_items")
+            .select("*")
+            .eq("quote_id", quoteId)
+            .order("position_number");
+
+          setItems(quoteItems?.map((item, i) => ({
+            ...item,
+            _id: `item-${i}-${Date.now()}`,
+          })) || []);
+        }
+      } else if (templateId) {
+        await loadTemplate(templateId);
+      } else {
+        // Default text für neue Angebote (Einleitung)
+        setIntroText("Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihr Interesse an unseren Produkten. Gerne unterbreite ich Ihnen folgendes Angebot:");
       }
-    } else if (templateId) {
-      await loadTemplate(templateId);
-    } else {
-      // Default text für neue Angebote (Einleitung)
-      setIntroText("Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihr Interesse an unseren Produkten. Gerne unterbreite ich Ihnen folgendes Angebot:");
+    } catch (err) {
+      console.error("Quote editor load error:", err);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   async function loadTemplate(id: string) {

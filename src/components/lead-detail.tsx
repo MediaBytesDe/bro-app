@@ -59,9 +59,14 @@ export function LeadDetail({ leadId }: Props) {
 
   async function loadLead() {
     setLoading(true);
-    const { data } = await supabase.from("leads").select("*").eq("id", leadId).single();
-    setLead(data);
-    setLoading(false);
+    try {
+      const { data } = await supabase.from("leads").select("*").eq("id", leadId).single();
+      setLead(data);
+    } catch (err) {
+      console.error("Lead load error:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function saveLead() {

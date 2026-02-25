@@ -79,11 +79,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Initialize Auth
   useEffect(() => {
+    let authInitialized = false;
+
     const initAuth = async () => {
       try {
         // Use getUser() directly - getSession() hangs on some Chrome Android versions
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
+        const { data: { user } } = await supabase.auth.getUser();
+
         if (user) {
           const profile = await fetchProfile(user.id);
           setState({
@@ -103,10 +105,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           error: "Auth-Fehler",
         });
         console.error("Auth init error:", err);
+      } finally {
+        authInitialized = true;
       }
     };
 
     initAuth();
+
+    // Safety timeout: if loading is still true after 15s, force it to false
+    const safetyTimeout = setTimeout(() => {
+      setState((s) => {
+        if (s.loading) {
+          console.warn("Auth safety timeout: forcing loading to false");
+          return { ...s, loading: false, error: "Auth-Timeout" };
+        }
+        return s;
+      });
+    }, 15000);
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -122,11 +137,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         } else if (event === "SIGNED_OUT") {
           setState({ ...defaultState, loading: false });
+        } else if (event === "TOKEN_REFRESHED" && session?.user) {
+          // Keep current state, just update session
+          setState((s) => ({ ...s, session, loading: false }));
+        } else if (event === "INITIAL_SESSION") {
+          // If initAuth already handled this, skip; otherwise ensure loading is false
+          if (authInitialized) return;
+          if (!session?.user) {
+            setState({ ...defaultState, loading: false });
+          }
         }
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(safetyTimeout);
+      subscription.unsubscribe();
+    };
   }, [supabase, fetchProfile]);
 
   // Sign In

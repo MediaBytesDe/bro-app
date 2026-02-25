@@ -44,15 +44,20 @@ export default function AIPromptsPage() {
 
   const loadPromptsData = async () => {
     setLoading(true);
-    const result = await loadAllPrompts();
+    try {
+      const result = await loadAllPrompts();
 
-    if (result.success && result.prompts) {
-      setPrompts(result.prompts);
-    } else {
-      toast.error(result.error || "Fehler beim Laden");
+      if (result.success && result.prompts) {
+        setPrompts(result.prompts);
+      } else {
+        toast.error(result.error || "Fehler beim Laden");
+      }
+    } catch (err) {
+      console.error("Prompts load error:", err);
+      toast.error("Fehler beim Laden der Prompts");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const handleCreate = () => {

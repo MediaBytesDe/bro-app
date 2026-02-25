@@ -83,7 +83,9 @@ export default function CalendarPage() {
   const [tradesLoaded, setTradesLoaded] = useState(false);
   
   useEffect(() => {
-    loadTradesFromDB(supabase, true).then(() => setTradesLoaded(true));
+    loadTradesFromDB(supabase, true)
+      .catch((err) => console.error("Failed to load trades:", err))
+      .finally(() => setTradesLoaded(true));
   }, []);
   
   useEffect(() => {

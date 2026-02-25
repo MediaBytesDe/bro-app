@@ -198,161 +198,164 @@ export function WorkfolderDetail({ project }: Props) {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    
-    // Trades aus DB laden (für Labels)
-    await loadTradesFromDB(supabase, true);
-    setTradeOptions(getTradeOptions());
+    try {
+      // Trades aus DB laden (für Labels)
+      await loadTradesFromDB(supabase, true);
+      setTradeOptions(getTradeOptions());
 
-    // Load customer
-    if (project.customer_id) {
-      const { data: cust } = await supabase
-        .from("customers")
-        .select("*")
-        .eq("id", project.customer_id)
-        .single();
-      setCustomer(cust);
-    }
-
-    // Load parent project (Marke) and status options
-    if (project.parent_id) {
-      const { data: parent } = await supabase
-        .from("projects")
-        .select("*")
-        .eq("id", project.parent_id)
-        .single();
-      setParentProject(parent);
-      if (parent?.workfolder_statuses) {
-        setStatusOptions(parent.workfolder_statuses as WorkfolderStatusDef[]);
+      // Load customer
+      if (project.customer_id) {
+        const { data: cust } = await supabase
+          .from("customers")
+          .select("*")
+          .eq("id", project.customer_id)
+          .single();
+        setCustomer(cust);
       }
-    }
 
-    // Load internal appointments
-    const { data: appts } = await supabase
-      .from("appointments")
-      .select("*")
-      .eq("project_id", project.id)
-      .order("start_time", { ascending: true });
-    
-    // Load partner jobs for this project first
-    const { data: partnerJobs } = await supabase
-      .from("partner_jobs")
-      .select("id")
-      .eq("project_id", project.id);
-    
-    const jobIds = (partnerJobs || []).map(j => j.id);
-    
-    // Load partner job appointments for those jobs
-    let partnerAppts: any[] = [];
-    if (jobIds.length > 0) {
-      const { data } = await supabase
-        .from("partner_job_appointments")
+      // Load parent project (Marke) and status options
+      if (project.parent_id) {
+        const { data: parent } = await supabase
+          .from("projects")
+          .select("*")
+          .eq("id", project.parent_id)
+          .single();
+        setParentProject(parent);
+        if (parent?.workfolder_statuses) {
+          setStatusOptions(parent.workfolder_statuses as WorkfolderStatusDef[]);
+        }
+      }
+
+      // Load internal appointments
+      const { data: appts } = await supabase
+        .from("appointments")
+        .select("*")
+        .eq("project_id", project.id)
+        .order("start_time", { ascending: true });
+
+      // Load partner jobs for this project first
+      const { data: partnerJobs } = await supabase
+        .from("partner_jobs")
+        .select("id")
+        .eq("project_id", project.id);
+
+      const jobIds = (partnerJobs || []).map(j => j.id);
+
+      // Load partner job appointments for those jobs
+      let partnerAppts: any[] = [];
+      if (jobIds.length > 0) {
+        const { data } = await supabase
+          .from("partner_job_appointments")
+          .select(`
+            id, title, date, time_start, time_end, notes,
+            job:partner_jobs!job_id (
+              id, title, trade,
+              partner:partners!accepted_by_partner_id (id, company_name)
+            )
+          `)
+          .in("job_id", jobIds)
+          .order("date", { ascending: true });
+        partnerAppts = data || [];
+      }
+
+      // Combine both - transform partner appointments to match Appointment interface
+      const internalAppts = (appts || []).map((a: any) => ({
+        ...a,
+        _type: 'internal' as const,
+      }));
+
+      const partnerApptsTransformed = partnerAppts.filter((a: any) => a.job).map((a: any) => ({
+        id: a.id,
+        title: a.title,
+        start_time: a.date && a.time_start ? `${a.date}T${a.time_start}` : a.date,
+        end_time: a.date && a.time_end ? `${a.date}T${a.time_end}` : null,
+        description: a.notes,
+        status: 'scheduled' as const,
+        appointment_type: a.job?.trade || 'sonstiges',
+        _type: 'partner' as const,
+        _partner_name: a.job?.partner?.company_name,
+        _trade: a.job?.trade,
+      }));
+
+      const allAppts = [...internalAppts, ...partnerApptsTransformed].sort((a, b) => {
+        const aTime = a.start_time ? new Date(a.start_time).getTime() : 0;
+        const bTime = b.start_time ? new Date(b.start_time).getTime() : 0;
+        return aTime - bTime;
+      });
+
+      setAppointments(allAppts as any);
+
+      // Load partner jobs for this project
+      const { data: jobs } = await supabase
+        .from("partner_jobs")
         .select(`
-          id, title, date, time_start, time_end, notes,
-          job:partner_jobs!job_id (
-            id, title, trade,
-            partner:partners!accepted_by_partner_id (id, company_name)
-          )
+          *,
+          partner:partners!accepted_by_partner_id (id, company_name, email, phone),
+          appointments:partner_job_appointments (id, title, date, time_start)
         `)
-        .in("job_id", jobIds)
-        .order("date", { ascending: true });
-      partnerAppts = data || [];
+        .eq("project_id", project.id)
+        .order("created_at", { ascending: false });
+      setPartnerJobs(jobs || []);
+
+      // Load documents
+      const { data: docs } = await supabase
+        .from("documents")
+        .select("*")
+        .eq("project_id", project.id)
+        .order("created_at", { ascending: false });
+      setDocuments(docs || []);
+
+      // Load quotes
+      const { data: quotesData } = await supabase
+        .from("wawi_quotes")
+        .select("*")
+        .eq("project_id", project.id)
+        .order("created_at", { ascending: false });
+      setQuotes(quotesData || []);
+
+      // Load tasks
+      const { data: tasksData } = await supabase
+        .from("project_tasks")
+        .select("*, assigned_user:users(id, display_name), assigned_partner:partners(id, company_name)")
+        .eq("project_id", project.id)
+        .order("sort_order")
+        .order("created_at", { ascending: false });
+      setTasks(tasksData || []);
+
+      // Load all users for task assignment
+      const { data: usersData } = await supabase
+        .from("users")
+        .select("id, display_name, username")
+        .eq("active", true)
+        .order("display_name");
+      setAllUsers(usersData || []);
+
+      // Load form templates (filtered by brand if parent exists)
+      const templatesQuery = supabase
+        .from("form_templates")
+        .select("*")
+        .or("is_active.is.null,is_active.eq.true")
+        .order("name");
+      const { data: templates } = await templatesQuery;
+      // Filter by brand_ids if applicable
+      const filteredTemplates = (templates || []).filter(t => {
+        if (!t.brand_ids || t.brand_ids.length === 0) return true;
+        return project.parent_id && t.brand_ids.includes(project.parent_id);
+      });
+      setFormTemplates(filteredTemplates);
+
+      // Load form submissions for this project
+      const { data: submissions } = await supabase
+        .from("form_submissions")
+        .select("*, form_template:form_templates(name)")
+        .eq("project_id", project.id)
+        .order("created_at", { ascending: false });
+      setFormSubmissions(submissions || []);
+    } catch (err) {
+      console.error("WorkfolderDetail load error:", err);
+    } finally {
+      setLoading(false);
     }
-    
-    // Combine both - transform partner appointments to match Appointment interface
-    const internalAppts = (appts || []).map((a: any) => ({
-      ...a,
-      _type: 'internal' as const,
-    }));
-    
-    const partnerApptsTransformed = partnerAppts.filter((a: any) => a.job).map((a: any) => ({
-      id: a.id,
-      title: a.title,
-      start_time: a.date && a.time_start ? `${a.date}T${a.time_start}` : a.date,
-      end_time: a.date && a.time_end ? `${a.date}T${a.time_end}` : null,
-      description: a.notes,
-      status: 'scheduled' as const,
-      appointment_type: a.job?.trade || 'sonstiges',
-      _type: 'partner' as const,
-      _partner_name: a.job?.partner?.company_name,
-      _trade: a.job?.trade,
-    }));
-    
-    const allAppts = [...internalAppts, ...partnerApptsTransformed].sort((a, b) => {
-      const aTime = a.start_time ? new Date(a.start_time).getTime() : 0;
-      const bTime = b.start_time ? new Date(b.start_time).getTime() : 0;
-      return aTime - bTime;
-    });
-    
-    setAppointments(allAppts as any);
-
-    // Load partner jobs for this project
-    const { data: jobs } = await supabase
-      .from("partner_jobs")
-      .select(`
-        *,
-        partner:partners!accepted_by_partner_id (id, company_name, email, phone),
-        appointments:partner_job_appointments (id, title, date, time_start)
-      `)
-      .eq("project_id", project.id)
-      .order("created_at", { ascending: false });
-    setPartnerJobs(jobs || []);
-
-    // Load documents
-    const { data: docs } = await supabase
-      .from("documents")
-      .select("*")
-      .eq("project_id", project.id)
-      .order("created_at", { ascending: false });
-    setDocuments(docs || []);
-
-    // Load quotes
-    const { data: quotesData } = await supabase
-      .from("wawi_quotes")
-      .select("*")
-      .eq("project_id", project.id)
-      .order("created_at", { ascending: false });
-    setQuotes(quotesData || []);
-
-    // Load tasks
-    const { data: tasksData } = await supabase
-      .from("project_tasks")
-      .select("*, assigned_user:users(id, display_name), assigned_partner:partners(id, company_name)")
-      .eq("project_id", project.id)
-      .order("sort_order")
-      .order("created_at", { ascending: false });
-    setTasks(tasksData || []);
-
-    // Load all users for task assignment
-    const { data: usersData } = await supabase
-      .from("users")
-      .select("id, display_name, username")
-      .eq("active", true)
-      .order("display_name");
-    setAllUsers(usersData || []);
-
-    // Load form templates (filtered by brand if parent exists)
-    const templatesQuery = supabase
-      .from("form_templates")
-      .select("*")
-      .or("is_active.is.null,is_active.eq.true")
-      .order("name");
-    const { data: templates } = await templatesQuery;
-    // Filter by brand_ids if applicable
-    const filteredTemplates = (templates || []).filter(t => {
-      if (!t.brand_ids || t.brand_ids.length === 0) return true;
-      return project.parent_id && t.brand_ids.includes(project.parent_id);
-    });
-    setFormTemplates(filteredTemplates);
-
-    // Load form submissions for this project
-    const { data: submissions } = await supabase
-      .from("form_submissions")
-      .select("*, form_template:form_templates(name)")
-      .eq("project_id", project.id)
-      .order("created_at", { ascending: false });
-    setFormSubmissions(submissions || []);
-
-    setLoading(false);
   }, [project.id, project.customer_id, project.parent_id]);
 
   useEffect(() => {

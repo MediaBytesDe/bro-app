@@ -38,9 +38,14 @@ export function SkillsTable() {
 
   async function loadSkills() {
     setLoading(true);
-    const { data } = await supabase.from("skills").select("*").order("name");
-    setSkills(data || []);
-    setLoading(false);
+    try {
+      const { data } = await supabase.from("skills").select("*").order("name");
+      setSkills(data || []);
+    } catch (err) {
+      console.error("Skills load error:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function openNew() {

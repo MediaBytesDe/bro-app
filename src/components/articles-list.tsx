@@ -38,28 +38,31 @@ export function ArticlesList() {
 
   async function loadData() {
     setLoading(true);
+    try {
+      // Load product_categories for hierarchy display
+      const { data: cats } = await supabase
+        .from("product_categories")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order");
 
-    // Load product_categories for hierarchy display
-    const { data: cats } = await supabase
-      .from("product_categories")
-      .select("*")
-      .eq("is_active", true)
-      .order("sort_order");
+      // Load products (category is TEXT field, not FK)
+      const { data: prods } = await supabase
+        .from("products")
+        .select("*")
+        .order("name");
 
-    // Load products (category is TEXT field, not FK)
-    const { data: prods } = await supabase
-      .from("products")
-      .select("*")
-      .order("name");
-
-    if (cats) setCategories(cats);
-    if (prods) {
-      setProducts(prods);
-      // All collapsed by default
-      setExpandedCategories(new Set());
+      if (cats) setCategories(cats);
+      if (prods) {
+        setProducts(prods);
+        // All collapsed by default
+        setExpandedCategories(new Set());
+      }
+    } catch (err) {
+      console.error("Articles load error:", err);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   // Filter products

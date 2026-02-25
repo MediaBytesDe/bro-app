@@ -206,9 +206,14 @@ export function LeadsKanban() {
 
   async function loadLeads() {
     setLoading(true);
-    const { data } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
-    setLeads(data || []);
-    setLoading(false);
+    try {
+      const { data } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
+      setLeads(data || []);
+    } catch (err) {
+      console.error("Leads load error:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const leadsByStage = STAGES.reduce((acc, stage) => {
