@@ -13,6 +13,8 @@ COPY . .
 RUN npm run build
 
 FROM node:22-alpine AS runner
+RUN apk add --no-cache tzdata
+ENV TZ=Europe/Berlin
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
