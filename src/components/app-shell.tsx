@@ -7,7 +7,7 @@ import {
   Home, Users, Brain, FileText, LogOut, Building2,
   FileSignature, Calendar, Wrench, FolderOpen, Cpu, Bot,
   ClipboardList, MoreHorizontal, X, Package, ChevronDown,
-  UserCircle, ShoppingCart, Briefcase, Settings, MessageSquare, Download, Database, Sparkles
+  UserCircle, ShoppingCart, Briefcase, Settings, MessageSquare, MessageSquareMore, Download, Database, Sparkles
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -17,6 +17,7 @@ const allTabs = [
   { id: "customers", path: "/customers", label: "Kunden", icon: Building2 },
   { id: "leads", path: "/leads", label: "Leads", icon: Users },
   { id: "quotes", path: "/quotes", label: "Angebote", icon: FileSignature },
+  { id: "anfragen", path: "/anfragen", label: "Anfragen", icon: MessageSquareMore },
   { id: "articles", path: "/articles", label: "Artikel", icon: Package },
   { id: "shopify-import", path: "/shopify-import", label: "Shopify Import", icon: Download },
   { id: "wawi-import", path: "/wawi-import", label: "WAWI Import", icon: Database },
@@ -58,6 +59,7 @@ const desktopNav: NavItem[] = [
     icon: ShoppingCart,
     children: [
       { id: "quotes", path: "/quotes", label: "Angebote", icon: FileSignature, description: "Angebote erstellen & verwalten" },
+      { id: "anfragen", path: "/anfragen", label: "Anfragen", icon: MessageSquareMore, description: "Kundenanfragen verwalten" },
       { id: "articles", path: "/articles", label: "Artikel", icon: Package, description: "Produkte & Dienstleistungen" },
       { id: "stock", path: "/articles/stock", label: "Lagerbestand", icon: Package, description: "Bestände & Warenbewegungen" },
       { id: "shopify-import", path: "/shopify-import", label: "Shopify Import", icon: Download, description: "Solarhandel24 Import" },
