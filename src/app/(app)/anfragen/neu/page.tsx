@@ -820,7 +820,6 @@ function CreateInquiryContent() {
           ref={photoInputRef}
           type="file"
           accept="image/*"
-          capture="environment"
           multiple
           onChange={handlePhotoSelect}
           className="hidden"
