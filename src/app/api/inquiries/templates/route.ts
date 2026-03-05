@@ -1,20 +1,32 @@
+import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+
+// Admin client with service role (bypasses RLS)
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: { autoRefreshToken: false, persistSession: false },
+    db: { schema: "public" },
+  }
+);
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { action, ...data } = body;
 
-    const supabase = await createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    // Auth check via server client
+    const serverClient = await createServerClient();
+    const { data: { user } } = await serverClient.auth.getUser();
 
     if (!user) {
       return NextResponse.json({ error: "Nicht authentifiziert" }, { status: 401 });
     }
 
     // Role check - only staff can manage templates
-    const { data: profile } = await supabase
+    const { data: profile } = await supabaseAdmin
       .from("users")
       .select("role")
       .eq("auth_id", user.id)
@@ -28,7 +40,7 @@ export async function POST(request: Request) {
       case "list": {
         const { trade, include_inactive } = data;
 
-        let query = supabase
+        let query = supabaseAdmin
           .from("inquiry_templates")
           .select("*")
           .order("sort_order", { ascending: true });
@@ -69,7 +81,7 @@ export async function POST(request: Request) {
         if (fields !== undefined) insertData.fields = fields;
         if (sort_order !== undefined) insertData.sort_order = sort_order;
 
-        const { data: template, error } = await supabase
+        const { data: template, error } = await supabaseAdmin
           .from("inquiry_templates")
           .insert(insertData)
           .select()
@@ -104,7 +116,7 @@ export async function POST(request: Request) {
           );
         }
 
-        const { data: template, error } = await supabase
+        const { data: template, error } = await supabaseAdmin
           .from("inquiry_templates")
           .update(updateData)
           .eq("id", id)
@@ -126,7 +138,7 @@ export async function POST(request: Request) {
         }
 
         // Soft delete: set is_active = false
-        const { error } = await supabase
+        const { error } = await supabaseAdmin
           .from("inquiry_templates")
           .update({ is_active: false })
           .eq("id", id);

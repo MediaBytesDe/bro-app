@@ -1,21 +1,32 @@
+import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+
+// Admin client with service role (bypasses RLS)
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: { autoRefreshToken: false, persistSession: false },
+    db: { schema: "public" },
+  }
+);
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { action, ...data } = body;
 
-    // Authenticate user
-    const supabase = await createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    // Auth check via server client
+    const serverClient = await createServerClient();
+    const { data: { user } } = await serverClient.auth.getUser();
 
     if (!user) {
       return NextResponse.json({ error: "Nicht authentifiziert" }, { status: 401 });
     }
 
     // Get partner_user record
-    const { data: partnerUser } = await supabase
+    const { data: partnerUser } = await supabaseAdmin
       .from("partner_users")
       .select("*, partner:partners(*)")
       .eq("auth_user_id", user.id)
@@ -29,7 +40,7 @@ export async function POST(request: Request) {
 
     switch (action) {
       case "list": {
-        const { data: recipients, error } = await supabase
+        const { data: recipients, error } = await supabaseAdmin
           .from("inquiry_recipients")
           .select(`
             *,
@@ -55,7 +66,7 @@ export async function POST(request: Request) {
         }
 
         // Verify partner is a recipient of this inquiry
-        const { data: recipient, error: recipientError } = await supabase
+        const { data: recipient, error: recipientError } = await supabaseAdmin
           .from("inquiry_recipients")
           .select("id")
           .eq("inquiry_id", id)
@@ -67,7 +78,7 @@ export async function POST(request: Request) {
         }
 
         // Get full inquiry data (without other partners' responses)
-        const { data: inquiry, error } = await supabase
+        const { data: inquiry, error } = await supabaseAdmin
           .from("inquiries")
           .select(`
             *,
@@ -84,7 +95,7 @@ export async function POST(request: Request) {
         }
 
         // Get own response separately (partner should NOT see other partners' responses)
-        const { data: ownResponse } = await supabase
+        const { data: ownResponse } = await supabaseAdmin
           .from("inquiry_responses")
           .select("*")
           .eq("inquiry_id", id)
@@ -102,7 +113,7 @@ export async function POST(request: Request) {
         }
 
         // Update recipient: viewed_at and status
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseAdmin
           .from("inquiry_recipients")
           .update({
             viewed_at: new Date().toISOString(),
@@ -117,14 +128,14 @@ export async function POST(request: Request) {
         }
 
         // If inquiry status is 'sent', update to 'in_review'
-        const { data: inquiry } = await supabase
+        const { data: inquiry } = await supabaseAdmin
           .from("inquiries")
           .select("status")
           .eq("id", id)
           .single();
 
         if (inquiry && inquiry.status === "sent") {
-          await supabase
+          await supabaseAdmin
             .from("inquiries")
             .update({ status: "in_review" })
             .eq("id", id);
@@ -147,7 +158,7 @@ export async function POST(request: Request) {
         }
 
         // Verify partner is a recipient
-        const { data: recipient, error: recipientError } = await supabase
+        const { data: recipient, error: recipientError } = await supabaseAdmin
           .from("inquiry_recipients")
           .select("id")
           .eq("inquiry_id", id)
@@ -175,7 +186,7 @@ export async function POST(request: Request) {
         if (valid_until !== undefined) responseData.valid_until = valid_until;
 
         // Upsert response (partner can update their draft)
-        const { data: response, error: responseError } = await supabase
+        const { data: response, error: responseError } = await supabaseAdmin
           .from("inquiry_responses")
           .upsert(responseData, {
             onConflict: "inquiry_id,partner_id",
@@ -190,7 +201,7 @@ export async function POST(request: Request) {
         // If submitted, update recipient status and check if all responded
         if (status === "submitted") {
           // Update recipient status to responded
-          await supabase
+          await supabaseAdmin
             .from("inquiry_recipients")
             .update({
               status: "responded",
@@ -200,7 +211,7 @@ export async function POST(request: Request) {
             .eq("partner_id", partnerId);
 
           // Check if ALL recipients have responded
-          const { data: allRecipients } = await supabase
+          const { data: allRecipients } = await supabaseAdmin
             .from("inquiry_recipients")
             .select("status")
             .eq("inquiry_id", id);
@@ -208,21 +219,21 @@ export async function POST(request: Request) {
           const allResponded = allRecipients?.every((r) => r.status === "responded");
 
           if (allResponded) {
-            await supabase
+            await supabaseAdmin
               .from("inquiries")
               .update({ status: "answered" })
               .eq("id", id);
           }
 
           // Create notification for inquiry creator
-          const { data: inquiry } = await supabase
+          const { data: inquiry } = await supabaseAdmin
             .from("inquiries")
             .select("created_by, title")
             .eq("id", id)
             .single();
 
           if (inquiry) {
-            await supabase.from("notifications").insert({
+            await supabaseAdmin.from("notifications").insert({
               recipient_type: "profile",
               recipient_id: inquiry.created_by,
               type: "inquiry_response",
@@ -247,7 +258,7 @@ export async function POST(request: Request) {
         }
 
         // Verify partner is a recipient
-        const { data: recipient, error: recipientError } = await supabase
+        const { data: recipient, error: recipientError } = await supabaseAdmin
           .from("inquiry_recipients")
           .select("id")
           .eq("inquiry_id", id)
@@ -269,7 +280,7 @@ export async function POST(request: Request) {
 
         if (attachments !== undefined) insertData.attachments = attachments;
 
-        const { data: msg, error } = await supabase
+        const { data: msg, error } = await supabaseAdmin
           .from("inquiry_messages")
           .insert(insertData)
           .select()
@@ -280,14 +291,14 @@ export async function POST(request: Request) {
         }
 
         // Create notification for inquiry creator
-        const { data: inquiry } = await supabase
+        const { data: inquiry } = await supabaseAdmin
           .from("inquiries")
           .select("created_by, title")
           .eq("id", id)
           .single();
 
         if (inquiry) {
-          await supabase.from("notifications").insert({
+          await supabaseAdmin.from("notifications").insert({
             recipient_type: "profile",
             recipient_id: inquiry.created_by,
             type: "inquiry_message",

@@ -1,20 +1,32 @@
+import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+
+// Admin client with service role (bypasses RLS)
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: { autoRefreshToken: false, persistSession: false },
+    db: { schema: "public" },
+  }
+);
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { action, ...data } = body;
 
-    const supabase = await createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    // Auth check via server client
+    const serverClient = await createServerClient();
+    const { data: { user } } = await serverClient.auth.getUser();
 
     if (!user) {
       return NextResponse.json({ error: "Nicht authentifiziert" }, { status: 401 });
     }
 
     // Role check - only staff can manage inquiries
-    const { data: profile } = await supabase
+    const { data: profile } = await supabaseAdmin
       .from("users")
       .select("role, display_name")
       .eq("auth_id", user.id)
@@ -28,7 +40,7 @@ export async function POST(request: Request) {
       case "list": {
         const { status, trade, project_id } = data;
 
-        let query = supabase
+        let query = supabaseAdmin
           .from("inquiries")
           .select("*, project:projects(id, name), recipients:inquiry_recipients(id, partner_id, status, partner:partners(id, company_name))")
           .order("created_at", { ascending: false });
@@ -59,7 +71,7 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: "ID ist erforderlich" }, { status: 400 });
         }
 
-        const { data: inquiry, error } = await supabase
+        const { data: inquiry, error } = await supabaseAdmin
           .from("inquiries")
           .select(`
             *,
@@ -108,7 +120,7 @@ export async function POST(request: Request) {
         if (photos !== undefined) insertData.photos = photos;
         if (mode !== undefined) insertData.mode = mode;
 
-        const { data: inquiry, error } = await supabase
+        const { data: inquiry, error } = await supabaseAdmin
           .from("inquiries")
           .insert(insertData)
           .select()
@@ -132,7 +144,7 @@ export async function POST(request: Request) {
         }
 
         // Only allow update if status is draft
-        const { data: existing, error: fetchError } = await supabase
+        const { data: existing, error: fetchError } = await supabaseAdmin
           .from("inquiries")
           .select("status")
           .eq("id", id)
@@ -168,7 +180,7 @@ export async function POST(request: Request) {
           );
         }
 
-        const { data: inquiry, error } = await supabase
+        const { data: inquiry, error } = await supabaseAdmin
           .from("inquiries")
           .update(updateData)
           .eq("id", id)
@@ -193,7 +205,7 @@ export async function POST(request: Request) {
         }
 
         // Validate inquiry exists and is draft
-        const { data: inquiry, error: fetchError } = await supabase
+        const { data: inquiry, error: fetchError } = await supabaseAdmin
           .from("inquiries")
           .select("*")
           .eq("id", id)
@@ -211,7 +223,7 @@ export async function POST(request: Request) {
         }
 
         // Update inquiry status to sent
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseAdmin
           .from("inquiries")
           .update({ status: "sent" })
           .eq("id", id);
@@ -227,7 +239,7 @@ export async function POST(request: Request) {
           status: "pending",
         }));
 
-        const { error: recipientError } = await supabase
+        const { error: recipientError } = await supabaseAdmin
           .from("inquiry_recipients")
           .insert(recipientEntries);
 
@@ -236,7 +248,7 @@ export async function POST(request: Request) {
         }
 
         // Create notifications for partner admin users
-        const { data: partnerUsers } = await supabase
+        const { data: partnerUsers } = await supabaseAdmin
           .from("partner_users")
           .select("id, partner_id")
           .in("partner_id", recipient_ids)
@@ -252,11 +264,11 @@ export async function POST(request: Request) {
             action_url: `/partner/anfragen/${inquiry.id}`,
           }));
 
-          await supabase.from("notifications").insert(notifications);
+          await supabaseAdmin.from("notifications").insert(notifications);
         }
 
         // Return updated inquiry
-        const { data: updatedInquiry, error: getError } = await supabase
+        const { data: updatedInquiry, error: getError } = await supabaseAdmin
           .from("inquiries")
           .select("*")
           .eq("id", id)
@@ -280,7 +292,7 @@ export async function POST(request: Request) {
         }
 
         // Set accepted partner's recipient status
-        const { error: acceptError } = await supabase
+        const { error: acceptError } = await supabaseAdmin
           .from("inquiry_recipients")
           .update({ status: "accepted" })
           .eq("inquiry_id", id)
@@ -291,7 +303,7 @@ export async function POST(request: Request) {
         }
 
         // Set all other recipients to declined
-        const { error: declineError } = await supabase
+        const { error: declineError } = await supabaseAdmin
           .from("inquiry_recipients")
           .update({ status: "declined" })
           .eq("inquiry_id", id)
@@ -302,7 +314,7 @@ export async function POST(request: Request) {
         }
 
         // Update inquiry status to accepted
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseAdmin
           .from("inquiries")
           .update({ status: "accepted" })
           .eq("id", id);
@@ -312,7 +324,7 @@ export async function POST(request: Request) {
         }
 
         // Create notification for accepted partner
-        const { data: acceptedUsers } = await supabase
+        const { data: acceptedUsers } = await supabaseAdmin
           .from("partner_users")
           .select("id")
           .eq("partner_id", partner_id)
@@ -328,11 +340,11 @@ export async function POST(request: Request) {
             action_url: `/partner/anfragen/${id}`,
           }));
 
-          await supabase.from("notifications").insert(acceptNotifications);
+          await supabaseAdmin.from("notifications").insert(acceptNotifications);
         }
 
         // Create decline notifications for other partners
-        const { data: otherRecipients } = await supabase
+        const { data: otherRecipients } = await supabaseAdmin
           .from("inquiry_recipients")
           .select("partner_id")
           .eq("inquiry_id", id)
@@ -341,7 +353,7 @@ export async function POST(request: Request) {
         if (otherRecipients && otherRecipients.length > 0) {
           const otherPartnerIds = otherRecipients.map((r) => r.partner_id);
 
-          const { data: declinedUsers } = await supabase
+          const { data: declinedUsers } = await supabaseAdmin
             .from("partner_users")
             .select("id")
             .in("partner_id", otherPartnerIds)
@@ -357,12 +369,12 @@ export async function POST(request: Request) {
               action_url: `/partner/anfragen/${id}`,
             }));
 
-            await supabase.from("notifications").insert(declineNotifications);
+            await supabaseAdmin.from("notifications").insert(declineNotifications);
           }
         }
 
         // Return updated inquiry
-        const { data: inquiry, error: getError } = await supabase
+        const { data: inquiry, error: getError } = await supabaseAdmin
           .from("inquiries")
           .select("*")
           .eq("id", id)
@@ -383,7 +395,7 @@ export async function POST(request: Request) {
         }
 
         // Set all recipients to declined
-        const { error: declineError } = await supabase
+        const { error: declineError } = await supabaseAdmin
           .from("inquiry_recipients")
           .update({ status: "declined" })
           .eq("inquiry_id", id);
@@ -393,7 +405,7 @@ export async function POST(request: Request) {
         }
 
         // Update inquiry status to declined
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseAdmin
           .from("inquiries")
           .update({ status: "declined" })
           .eq("id", id);
@@ -403,7 +415,7 @@ export async function POST(request: Request) {
         }
 
         // Create decline notifications for all partners
-        const { data: recipients } = await supabase
+        const { data: recipients } = await supabaseAdmin
           .from("inquiry_recipients")
           .select("partner_id")
           .eq("inquiry_id", id);
@@ -411,7 +423,7 @@ export async function POST(request: Request) {
         if (recipients && recipients.length > 0) {
           const partnerIds = recipients.map((r) => r.partner_id);
 
-          const { data: partnerUsers } = await supabase
+          const { data: partnerUsers } = await supabaseAdmin
             .from("partner_users")
             .select("id")
             .in("partner_id", partnerIds)
@@ -427,12 +439,12 @@ export async function POST(request: Request) {
               action_url: `/partner/anfragen/${id}`,
             }));
 
-            await supabase.from("notifications").insert(notifications);
+            await supabaseAdmin.from("notifications").insert(notifications);
           }
         }
 
         // Return updated inquiry
-        const { data: inquiry, error: getError } = await supabase
+        const { data: inquiry, error: getError } = await supabaseAdmin
           .from("inquiries")
           .select("*")
           .eq("id", id)
@@ -452,7 +464,7 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: "ID ist erforderlich" }, { status: 400 });
         }
 
-        const { data: inquiry, error } = await supabase
+        const { data: inquiry, error } = await supabaseAdmin
           .from("inquiries")
           .update({ status: "closed" })
           .eq("id", id)
@@ -486,7 +498,7 @@ export async function POST(request: Request) {
 
         if (attachments !== undefined) insertData.attachments = attachments;
 
-        const { data: msg, error } = await supabase
+        const { data: msg, error } = await supabaseAdmin
           .from("inquiry_messages")
           .insert(insertData)
           .select()
