@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { Spinner } from "@/components/ui/spinner";
@@ -39,10 +40,14 @@ import {
   Folder,
   ListTodo,
   Building2,
+  Inbox,
+  Send,
   type LucideIcon,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { Upload3DModel } from "@/components/upload-3d-model";
+import { INQUIRY_STATUS_MAP, URGENCY_MAP } from "@/lib/inquiries/constants";
+import type { InquiryStatus } from "@/lib/inquiries/types";
 import type { 
   Project, 
   Customer, 
@@ -100,7 +105,7 @@ interface Props {
   project: Project;
 }
 
-type TabType = "overview" | "appointments" | "subcontractors" | "documents" | "gallery" | "forms" | "quotes" | "tasks";
+type TabType = "overview" | "appointments" | "subcontractors" | "documents" | "gallery" | "forms" | "quotes" | "tasks" | "inquiries";
 
 export function WorkfolderDetail({ project }: Props) {
   const searchParams = useSearchParams();
@@ -114,6 +119,7 @@ export function WorkfolderDetail({ project }: Props) {
   const [loading, setLoading] = useState(true);
   const [quotes, setQuotes] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
+  const [inquiries, setInquiries] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [currentStatus, setCurrentStatus] = useState<string | null>(project.workfolder_status);
@@ -351,6 +357,19 @@ export function WorkfolderDetail({ project }: Props) {
         .eq("project_id", project.id)
         .order("created_at", { ascending: false });
       setFormSubmissions(submissions || []);
+
+      // Load inquiries for this project
+      const { data: inqData } = await supabase
+        .from("inquiries")
+        .select(`
+          *,
+          recipients:inquiry_recipients(
+            id, status, partner:partners(id, company_name)
+          )
+        `)
+        .eq("project_id", project.id)
+        .order("created_at", { ascending: false });
+      setInquiries(inqData || []);
     } catch (err) {
       console.error("WorkfolderDetail load error:", err);
     } finally {
@@ -718,10 +737,11 @@ export function WorkfolderDetail({ project }: Props) {
     { id: "tasks", label: "Aufgaben", icon: ListTodo, count: nonDoneTasksCount },
     { id: "appointments", label: "Termine", icon: Calendar, count: appointments.length },
     { id: "subcontractors", label: "Partner", icon: Building2, count: partnerJobs.length },
+    { id: "inquiries", label: "Anfragen", icon: Send, count: inquiries.length },
     { id: "documents", label: "Dokumente", icon: FileText, count: documents.length },
     { id: "gallery", label: "Galerie", icon: ImageIcon },
     { id: "forms", label: "Formulare", icon: ClipboardList, count: formSubmissions.length },
-  ] as const, [quotes.length, nonDoneTasksCount, appointments.length, partnerJobs.length, documents.length, formSubmissions.length]);
+  ] as const, [quotes.length, nonDoneTasksCount, appointments.length, partnerJobs.length, inquiries.length, documents.length, formSubmissions.length]);
 
   // Memoize sorted status options
   const sortedStatusOptions = useMemo(() =>
@@ -1606,6 +1626,174 @@ export function WorkfolderDetail({ project }: Props) {
                   </table>
                 </div>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Inquiries */}
+        {activeTab === "inquiries" && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold">Anfragen</h3>
+              <Link
+                href={`/anfragen/neu?project_id=${project.id}`}
+                className="btn btn-primary btn-sm"
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                Neue Anfrage
+              </Link>
+            </div>
+
+            {inquiries.length === 0 ? (
+              <div className="card p-8 text-center text-neutral-500">
+                <Inbox className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>Keine Anfragen für dieses Projekt</p>
+                <p className="text-sm mt-1">Erstelle eine Anfrage an Nachunternehmer</p>
+                <Link
+                  href={`/anfragen/neu?project_id=${project.id}`}
+                  className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-[#fa432a] hover:bg-[#e03820] text-white rounded-xl font-medium transition-colors text-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  Neue Anfrage erstellen
+                </Link>
+              </div>
+            ) : (
+              <>
+                {/* Desktop Table */}
+                <div className="card overflow-hidden hidden md:block">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-neutral-800 bg-[#0a0a0a]">
+                        <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium">Titel</th>
+                        <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium">Status</th>
+                        <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium hidden lg:table-cell">Gewerk</th>
+                        <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium hidden lg:table-cell">Dringlichkeit</th>
+                        <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium hidden lg:table-cell">Empfänger</th>
+                        <th className="text-left text-xs text-neutral-500 uppercase py-3 px-4 font-medium">Erstellt</th>
+                        <th className="w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inquiries.map((inq: any) => {
+                        const statusInfo = INQUIRY_STATUS_MAP[inq.status] || {
+                          label: inq.status,
+                          class: "bg-neutral-500/20 text-neutral-400",
+                        };
+                        const urgencyInfo = URGENCY_MAP[inq.urgency] || {
+                          label: inq.urgency,
+                          class: "bg-neutral-500/20 text-neutral-400",
+                        };
+                        const recipientCount = inq.recipients?.length || 0;
+                        const recipientDisplay = recipientCount === 0
+                          ? "–"
+                          : recipientCount === 1
+                            ? (inq.recipients[0]?.partner?.company_name || "1 Empfänger")
+                            : `${recipientCount} Empfänger`;
+
+                        return (
+                          <tr
+                            key={inq.id}
+                            className="border-b border-neutral-800/50 hover:bg-[#111] transition-colors cursor-pointer"
+                            onClick={() => router.push(`/anfragen/${inq.id}`)}
+                          >
+                            <td className="py-3 px-4">
+                              <span className="font-medium text-white">{inq.title}</span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`text-xs px-2 py-1 rounded ${statusInfo.class}`}>
+                                {statusInfo.label}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 hidden lg:table-cell">
+                              <span className="text-xs px-2 py-0.5 bg-neutral-800 text-neutral-400 rounded">
+                                {getTradeLabel(inq.trade)}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 hidden lg:table-cell">
+                              <span className={`text-xs px-2 py-1 rounded ${urgencyInfo.class}`}>
+                                {urgencyInfo.label}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 hidden lg:table-cell">
+                              <span className="text-neutral-300 text-sm">{recipientDisplay}</span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="text-neutral-400 text-sm whitespace-nowrap">
+                                {new Date(inq.created_at).toLocaleDateString("de-DE", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "numeric",
+                                })}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <ChevronRight className="w-4 h-4 text-neutral-600" />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Cards */}
+                <div className="space-y-3 md:hidden">
+                  {inquiries.map((inq: any) => {
+                    const statusInfo = INQUIRY_STATUS_MAP[inq.status] || {
+                      label: inq.status,
+                      class: "bg-neutral-500/20 text-neutral-400",
+                    };
+                    const urgencyInfo = URGENCY_MAP[inq.urgency] || {
+                      label: inq.urgency,
+                      class: "bg-neutral-500/20 text-neutral-400",
+                    };
+                    const recipientCount = inq.recipients?.length || 0;
+                    const recipientDisplay = recipientCount === 0
+                      ? "–"
+                      : recipientCount === 1
+                        ? (inq.recipients[0]?.partner?.company_name || "1 Empfänger")
+                        : `${recipientCount} Empfänger`;
+
+                    return (
+                      <Link
+                        key={inq.id}
+                        href={`/anfragen/${inq.id}`}
+                        className="card block p-4 hover:bg-[#111] transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium text-white truncate">{inq.title}</h3>
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                              <span className={`text-xs px-2 py-0.5 rounded ${statusInfo.class}`}>
+                                {statusInfo.label}
+                              </span>
+                              <span className={`text-xs px-2 py-0.5 rounded ${urgencyInfo.class}`}>
+                                {urgencyInfo.label}
+                              </span>
+                              <span className="text-xs px-2 py-0.5 bg-neutral-800 text-neutral-400 rounded">
+                                {getTradeLabel(inq.trade)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 mt-2 text-xs text-neutral-500">
+                              <span>{recipientDisplay}</span>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <span className="text-xs text-neutral-500">
+                              {new Date(inq.created_at).toLocaleDateString("de-DE", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                              })}
+                            </span>
+                            <ChevronRight className="w-4 h-4 text-neutral-600" />
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
         )}
