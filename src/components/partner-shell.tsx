@@ -123,12 +123,16 @@ export function PartnerShell({ partner, partnerUser, children }: Props) {
     }
 
     // Pending inquiries
-    const { count: inquiryCount } = await supabase
-      .from("inquiry_recipients")
-      .select("*", { count: "exact", head: true })
-      .eq("partner_id", partner.id)
-      .eq("status", "pending");
-    setPendingInquiries(inquiryCount || 0);
+    try {
+      const { count: inquiryCount } = await supabase
+        .from("inquiry_recipients")
+        .select("*", { count: "exact", head: true })
+        .eq("partner_id", partner.id)
+        .eq("status", "pending");
+      setPendingInquiries(inquiryCount || 0);
+    } catch {
+      // RLS may block - ignore
+    }
   }
 
   async function handleSignOut() {

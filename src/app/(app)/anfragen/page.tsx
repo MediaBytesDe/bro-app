@@ -78,23 +78,18 @@ export default function InquiryListPage() {
       // Load trade labels from DB
       await loadTradesFromDB(supabase, true);
 
-      const { data, error } = await supabase
-        .from("inquiries")
-        .select(`
-          *,
-          project:projects(id, name),
-          recipients:inquiry_recipients(
-            id, partner_id, status,
-            partner:partners(id, company_name)
-          )
-        `)
-        .order("created_at", { ascending: false });
+      const res = await fetch("/api/inquiries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "list" }),
+      });
+      const json = await res.json();
 
-      if (error) {
-        console.error("Error loading inquiries:", error);
+      if (json.error) {
+        console.error("Error loading inquiries:", json.error);
       }
 
-      setInquiries((data as InquiryRow[]) || []);
+      setInquiries((json.data as InquiryRow[]) || []);
     } catch (err) {
       console.error("Error loading inquiries:", err);
     } finally {

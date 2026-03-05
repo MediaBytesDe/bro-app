@@ -358,18 +358,14 @@ export function WorkfolderDetail({ project }: Props) {
         .order("created_at", { ascending: false });
       setFormSubmissions(submissions || []);
 
-      // Load inquiries for this project
-      const { data: inqData } = await supabase
-        .from("inquiries")
-        .select(`
-          *,
-          recipients:inquiry_recipients(
-            id, status, partner:partners(id, company_name)
-          )
-        `)
-        .eq("project_id", project.id)
-        .order("created_at", { ascending: false });
-      setInquiries(inqData || []);
+      // Load inquiries for this project (via API to bypass RLS)
+      const inqRes = await fetch("/api/inquiries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "list", project_id: project.id }),
+      });
+      const inqJson = await inqRes.json();
+      setInquiries(inqJson.data || []);
     } catch (err) {
       console.error("WorkfolderDetail load error:", err);
     } finally {
