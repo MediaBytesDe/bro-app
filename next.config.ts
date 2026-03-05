@@ -74,7 +74,7 @@ const nextConfig: NextConfig = {
           },
           {
             key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=()'
+            value: 'camera=(self), microphone=(), geolocation=()'
           },
           {
             key: 'Content-Security-Policy',
@@ -82,7 +82,7 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
               "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: https:",
+              "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
               "connect-src 'self' https://*.supabase.co wss://*.supabase.co wss://bro-api.brojekt.dev",
               "frame-src 'self' https://*.supabase.co blob:",
