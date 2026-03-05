@@ -16,7 +16,8 @@ import {
   Bell,
   CalendarClock,
   Package,
-  CalendarDays
+  CalendarDays,
+  MessageSquareMore
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -42,6 +43,7 @@ export function PartnerShell({ partner, partnerUser, children }: Props) {
   const isAdmin = partnerUser.role === 'admin';
   const [unreadCount, setUnreadCount] = useState(0);
   const [pendingRequests, setPendingRequests] = useState(0);
+  const [pendingInquiries, setPendingInquiries] = useState(0);
 
   useEffect(() => {
     loadCounts();
@@ -62,14 +64,26 @@ export function PartnerShell({ partner, partnerUser, children }: Props) {
       .channel("appointment_responses_bell")
       .on("postgres_changes", {
         event: "*",
-        schema: "public", 
+        schema: "public",
         table: "appointment_responses",
+      }, () => loadCounts())
+      .subscribe();
+
+    // Realtime für Anfragen
+    const inquiryChannel = supabase
+      .channel("inquiry_recipients_bell")
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "inquiry_recipients",
+        filter: `partner_id=eq.${partner.id}`,
       }, () => loadCounts())
       .subscribe();
 
     return () => {
       supabase.removeChannel(notifChannel);
       supabase.removeChannel(reqChannel);
+      supabase.removeChannel(inquiryChannel);
     };
   }, [partnerUser.id, partner.id]);
 
@@ -107,6 +121,14 @@ export function PartnerShell({ partner, partnerUser, children }: Props) {
         setPendingRequests(reqCount || 0);
       }
     }
+
+    // Pending inquiries
+    const { count: inquiryCount } = await supabase
+      .from("inquiry_recipients")
+      .select("*", { count: "exact", head: true })
+      .eq("partner_id", partner.id)
+      .eq("status", "pending");
+    setPendingInquiries(inquiryCount || 0);
   }
 
   async function handleSignOut() {
@@ -118,6 +140,7 @@ export function PartnerShell({ partner, partnerUser, children }: Props) {
     { href: "/partner", icon: Home, label: "Dashboard", exact: true },
     { href: "/partner/auftraege", icon: ClipboardList, label: "Aufträge" },
     { href: "/partner/aufgaben", icon: ListTodo, label: "Aufgaben" },
+    { href: "/partner/anfragen", icon: MessageSquareMore, label: "Anfragen", badge: pendingInquiries },
     { href: "/partner/termin-anfragen", icon: CalendarClock, label: "Termin-Anfragen", badge: pendingRequests },
     { href: "/partner/kalender", icon: Calendar, label: "Kalender" },
     { href: "/partner/verfuegbarkeit", icon: CalendarDays, label: "Verfügbarkeit" },
