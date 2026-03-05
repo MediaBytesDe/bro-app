@@ -315,7 +315,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Unbekannte Aktion" }, { status: 400 });
     }
   } catch (error) {
+    console.error("[API /api/partner/inquiries] Error:", error);
     const message = error instanceof Error ? error.message : "Server-Fehler";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const stack = error instanceof Error ? error.stack : undefined;
+    return NextResponse.json({ error: message, stack, env_check: { service_role_set: !!process.env.SUPABASE_SERVICE_ROLE_KEY, supabase_url_set: !!process.env.NEXT_PUBLIC_SUPABASE_URL } }, { status: 500 });
   }
 }
