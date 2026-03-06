@@ -7,6 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { AppointmentsSection } from "@/components/dashboard/appointments-section";
 import { TasksSection } from "@/components/dashboard/tasks-section";
 import { KPISection } from "@/components/dashboard/kpi-section";
+import { ProfitKPISection } from "@/components/dashboard/profit-kpi-section";
 import {
   Calendar, Clock, CheckCircle, Users, ChevronRight,
   Zap, FileSignature, MapPin, Phone, AlertCircle,
@@ -200,6 +201,9 @@ export function Dashboard() {
 
       {/* KPIs */}
       <KPISection />
+
+      {/* Profit KPIs */}
+      <ProfitKPISection />
 
       {/* Main Grid - 2 Columns on Desktop */}
       <div className="grid md:grid-cols-2 gap-6">

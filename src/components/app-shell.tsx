@@ -7,7 +7,7 @@ import {
   Home, Users, Brain, FileText, LogOut, Building2,
   FileSignature, Calendar, Wrench, FolderOpen, Cpu, Bot,
   ClipboardList, MoreHorizontal, X, Package, ChevronDown,
-  UserCircle, ShoppingCart, Briefcase, Settings, MessageSquare, MessageSquareMore, Download, Database, Sparkles, Receipt
+  UserCircle, ShoppingCart, Briefcase, Settings, MessageSquare, MessageSquareMore, Download, Database, Sparkles, Receipt, BarChart3
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -27,6 +27,7 @@ const allTabs = [
   { id: "subcontractors", path: "/subcontractors", label: "Subuntern.", icon: Wrench },
   { id: "trades", path: "/trades", label: "Gewerke", icon: Briefcase },
   { id: "rechnungen", path: "/rechnungen", label: "Rechnungen", icon: Receipt },
+  { id: "statistiken", path: "/statistiken", label: "Statistiken", icon: BarChart3 },
   { id: "documents", path: "/documents", label: "Dokumente", icon: FolderOpen },
   { id: "skills", path: "/skills", label: "Skills", icon: Brain },
   { id: "logs", path: "/logs", label: "Logs", icon: FileText },
@@ -79,6 +80,7 @@ const desktopNav: NavItem[] = [
       { id: "subcontractors", path: "/subcontractors", label: "Subunternehmer", icon: Wrench, description: "Partner & Monteure" },
       { id: "trades", path: "/trades", label: "Gewerke", icon: Wrench, description: "DC/AC-Montage, Elektro, etc." },
       { id: "rechnungen", path: "/rechnungen", label: "Rechnungen", icon: Receipt, description: "Partner-Rechnungen zuordnen" },
+      { id: "statistiken", path: "/statistiken", label: "Statistiken", icon: BarChart3, description: "Gewinn, Margen & Kosten" },
     ]
   },
   {
