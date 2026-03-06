@@ -42,10 +42,13 @@ import {
   Building2,
   Inbox,
   Send,
+  Package,
   type LucideIcon,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { Upload3DModel } from "@/components/upload-3d-model";
+import { NachkalkulationTab } from "@/components/nachkalkulation-tab";
+import { MaterialTab } from "@/components/material-tab";
 import { INQUIRY_STATUS_MAP, URGENCY_MAP } from "@/lib/inquiries/constants";
 import type { InquiryStatus } from "@/lib/inquiries/types";
 import type { 
@@ -105,7 +108,7 @@ interface Props {
   project: Project;
 }
 
-type TabType = "overview" | "appointments" | "subcontractors" | "documents" | "gallery" | "forms" | "quotes" | "tasks" | "inquiries";
+type TabType = "overview" | "appointments" | "subcontractors" | "documents" | "gallery" | "forms" | "quotes" | "tasks" | "inquiries" | "nachkalkulation" | "material";
 
 export function WorkfolderDetail({ project }: Props) {
   const searchParams = useSearchParams();
@@ -737,6 +740,8 @@ export function WorkfolderDetail({ project }: Props) {
     { id: "documents", label: "Dokumente", icon: FileText, count: documents.length },
     { id: "gallery", label: "Galerie", icon: ImageIcon },
     { id: "forms", label: "Formulare", icon: ClipboardList, count: formSubmissions.length },
+    { id: "nachkalkulation", label: "Kalkulation", icon: Receipt },
+    { id: "material", label: "Material", icon: Package },
   ] as const, [quotes.length, nonDoneTasksCount, appointments.length, partnerJobs.length, inquiries.length, documents.length, formSubmissions.length]);
 
   // Memoize sorted status options
@@ -1792,6 +1797,15 @@ export function WorkfolderDetail({ project }: Props) {
               </>
             )}
           </div>
+        )}
+
+        {/* Nachkalkulation */}
+        {activeTab === "nachkalkulation" && (
+          <NachkalkulationTab projectId={project.id} />
+        )}
+
+        {activeTab === "material" && (
+          <MaterialTab projectId={project.id} />
         )}
       </div>
 
